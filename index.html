@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CYCPLUS DC1 | Fat Log</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #18201e;
+      --muted: #718078;
+      --paper: #f4f6f0;
+      --panel: #ffffff;
+      --line: #dfe6df;
+      --green: #2c7a55;
+      --lime: #c6e66b;
+      --yellow: #f2d35e;
+      --orange: #ef8d4a;
+      --red: #df5b4b;
+      --shadow: 0 18px 45px rgba(34, 57, 44, .09);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font-family: Manrope, sans-serif; }
+    button, input { font: inherit; }
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: 250px 1fr; }
+    aside { padding: 30px 20px; background: #1c2b27; color: #edf5e8; display: flex; flex-direction: column; }
+    .brand { display: flex; gap: 11px; align-items: center; padding: 0 12px 44px; }
+    .brand-mark { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--lime); position: relative; }
+    .brand-mark::after { content: ''; position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--lime); top: 10px; left: 10px; }
+    .brand strong { display: block; font-size: 14px; letter-spacing: .12em; }
+    .brand small { display: block; color: #9eb3a2; font-size: 9px; letter-spacing: .12em; margin-top: 3px; }
+    nav { display: grid; gap: 8px; }
+    nav button { border: 0; background: transparent; color: #9eb3a2; text-align: left; padding: 13px 14px; border-radius: 10px; cursor: pointer; display: flex; gap: 13px; align-items: center; font-size: 12px; }
+    nav button.active, nav button:hover { color: #f5faef; background: #294239; }
+    nav svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .aside-footer { margin-top: auto; border-top: 1px solid #344941; padding: 20px 12px 2px; color: #9eb3a2; font-size: 10px; line-height: 1.6; }
+    main { padding: 30px 44px 42px; max-width: 1500px; width: 100%; }
+    .topbar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+    .eyebrow { color: var(--green); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: .16em; }
+    h1 { font-size: clamp(26px, 3vw, 40px); letter-spacing: -.06em; margin: 8px 0 5px; line-height: 1; }
+    .subtitle { color: var(--muted); font-size: 12px; margin: 0; }
+    .date { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 11px; background: white; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--line); }
+    .connect-btn { margin-top: 10px; border: 0; border-radius: 8px; background: var(--green); color: white; padding: 10px 14px; cursor: pointer; font-size: 11px; font-weight: 700; }
+    .connect-btn:hover { background: #205d40; }
+    .connect-btn.connected { background: #607a62; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .8fr); gap: 18px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .visual-card { min-height: 580px; overflow: hidden; position: relative; background: #eef2e6; }
+    .visual-head { position: absolute; top: 27px; left: 29px; z-index: 2; }
+    .visual-head h2 { margin: 8px 0 6px; font-size: 22px; letter-spacing: -.05em; }
+    .visual-head p { margin: 0; color: var(--muted); font-size: 11px; }
+    .view-switch { position: absolute; z-index: 3; right: 24px; top: 23px; display: flex; gap: 4px; padding: 4px; background: rgba(255,255,255,.72); border: 1px solid rgba(220,228,216,.9); border-radius: 8px; }
+    .view-switch button { cursor: pointer; border: 0; border-radius: 5px; background: transparent; color: var(--muted); padding: 7px 11px; font-size: 11px; }
+    .view-switch button.active { background: var(--ink); color: #fff; }
+    .scene { position: absolute; inset: 96px 0 36px; cursor: grab; touch-action: none; }
+    .scene.dragging { cursor: grabbing; }
+    #sceneCanvas { width: 100%; height: 100%; display: block; }
+    .zoom-controls { position: absolute; left: 25px; bottom: 30px; z-index: 4; display: flex; gap: 4px; padding: 4px; background: rgba(255,255,255,.75); border: 1px solid rgba(220,228,216,.9); border-radius: 8px; }
+    .zoom-controls button { width: 29px; height: 27px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); cursor: pointer; font-family: 'DM Mono', monospace; font-size: 14px; }
+    .zoom-controls button:hover { background: var(--ink); color: white; }
+    .zoom-level { min-width: 38px; align-self: center; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; text-align: center; }
+    .model-shadow { position: absolute; bottom: 24px; left: 26%; width: 48%; height: 24px; border-radius: 50%; background: rgba(79, 104, 75, .16); filter: blur(10px); pointer-events: none; }
+    .scale-reference { position: absolute; right: 28px; bottom: 34px; color: var(--muted); pointer-events: none; }
+    .scale-reference span { font-family: 'DM Mono', monospace; font-size: 9px; line-height: 1.4; }
+    .scene-caption { position: absolute; bottom: 18px; left: 28px; right: 28px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 10px; }
+    .drag-note { font-family: 'DM Mono', monospace; font-size: 9px; }
+    .legend { display: flex; gap: 13px; align-items: center; }
+    .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); margin-right: 5px; }
+    .side { display: grid; gap: 18px; align-content: start; }
+    .metric-card { padding: 25px; }
+    .metric-card h3 { font-size: 12px; font-weight: 600; margin: 0 0 18px; color: var(--muted); }
+    .metric-number { display: flex; align-items: baseline; gap: 8px; }
+    .metric-number strong { font-family: 'DM Mono', monospace; font-size: 40px; letter-spacing: -.08em; }
+    .metric-number span { color: var(--muted); font-size: 12px; }
+    .meter { height: 7px; background: #edf0e9; border-radius: 10px; margin: 17px 0 9px; overflow: hidden; }
+    .meter div { height: 100%; width: 62%; background: linear-gradient(90deg, var(--yellow), var(--orange)); border-radius: inherit; }
+    .metric-foot { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+    .speed-dashboard { display: flex; justify-content: space-between; align-items: end; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+    .speed-dashboard small { display: block; color: var(--muted); font-size: 9px; margin-bottom: 3px; }
+    .speed-dashboard strong { font-family: 'DM Mono', monospace; font-size: 25px; letter-spacing: -.06em; }
+    .speed-dashboard strong span { font-size: 10px; color: var(--muted); letter-spacing: 0; }
+    .live-stats { display: flex; gap: 11px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; }
+    .entry-card { padding: 25px; }
+    .entry-card h3 { margin: 0 0 18px; font-size: 13px; }
+    .input-row { display: flex; gap: 8px; }
+    .input-wrap { flex: 1; display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; }
+    .input-wrap input { border: 0; outline: 0; width: 100%; padding: 12px 0; font-family: 'DM Mono', monospace; font-size: 18px; color: var(--ink); background: transparent; }
+    .input-wrap span { font-size: 11px; color: var(--muted); }
+    .log-btn { border: 0; border-radius: 8px; background: var(--green); color: white; padding: 0 16px; cursor: pointer; font-size: 11px; font-weight: 700; }
+    .log-btn:hover { background: #205d40; }
+    .helper { font-size: 10px; color: var(--muted); margin: 11px 0 0; line-height: 1.6; }
+    .history { grid-column: 1 / -1; padding: 23px 28px; }
+    .history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
+    .history h3 { font-size: 13px; margin: 0; }
+    .history-head span { font-size: 10px; color: var(--muted); }
+    .logs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .log-item { display: flex; justify-content: space-between; align-items: center; padding: 11px 13px; background: #f7f9f4; border-radius: 7px; font-size: 11px; }
+    .log-item time { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px; }
+    .log-item strong { font-family: 'DM Mono', monospace; font-weight: 500; }
+    .calendar { padding: 23px 28px; }
+    .calendar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .calendar-head h3 { margin: 0; font-size: 13px; }
+    .calendar-head span { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 11px; }
+    .weekdays, .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+    .weekdays { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; margin-bottom: 5px; text-align: center; }
+    .day { min-height: 42px; border: 1px solid transparent; border-radius: 7px; background: #f7f9f4; color: var(--ink); cursor: pointer; font-size: 11px; position: relative; }
+    .day:hover, .day.selected { border-color: var(--green); background: #e8f1df; }
+    .day.muted { color: #b4beb5; background: transparent; cursor: default; }
+    .day.has-log::after { content: ''; position: absolute; width: 4px; height: 4px; left: calc(50% - 2px); bottom: 6px; border-radius: 50%; background: var(--orange); }
+    .calendar-note { color: var(--muted); font-size: 10px; margin: 12px 0 0; }
+    @media (min-width: 901px) and (min-height: 650px) {
+      body { overflow: hidden; }
+      .app-shell { height: 100vh; min-height: 650px; }
+      aside { padding: 22px 16px; }
+      .brand { padding-bottom: 30px; }
+      main { height: 100vh; overflow: hidden; padding: 20px 30px 18px; }
+      .topbar { margin-bottom: 16px; }
+      h1 { font-size: clamp(26px, 2.5vw, 34px); }
+      .grid { height: calc(100vh - 128px); grid-template-rows: minmax(0, 1fr) 76px; gap: 12px; }
+      .visual-card { min-height: 0; height: 100%; }
+      .visual-head { top: 20px; left: 23px; }
+      .visual-head h2 { font-size: 20px; }
+      .view-switch { top: 17px; right: 18px; }
+      .scene { inset: 78px 0 30px; }
+      .side { gap: 10px; min-height: 0; overflow: hidden; }
+      .metric-card, .entry-card, .calendar { padding: 15px 18px; }
+      .metric-card h3 { margin-bottom: 8px; }
+      .metric-number strong { font-size: 30px; }
+      .meter { margin: 10px 0 6px; }
+      .helper { margin-top: 7px; }
+      .calendar-head { margin-bottom: 8px; }
+      .weekdays, .days { gap: 3px; }
+      .day { min-height: 27px; }
+      .day.has-log::after { bottom: 3px; }
+      .calendar-note { margin-top: 7px; }
+      .entry-card h3 { margin-bottom: 8px; }
+      .input-wrap input { padding: 8px 0; }
+      .history { padding: 12px 18px; overflow: hidden; }
+      .history-head { margin-bottom: 7px; }
+      .log-item { padding: 7px 10px; }
+    }
+    @media (min-width: 501px) and (max-width: 900px) {
+      main { padding: 18px 20px 20px; }
+      .topbar { margin-bottom: 14px; }
+      h1 { font-size: 30px; }
+      .grid { grid-template-columns: minmax(0, 1.35fr) minmax(230px, .85fr); gap: 10px; }
+      .visual-card { min-height: 465px; }
+      .visual-head { top: 20px; left: 22px; }
+      .visual-head h2 { font-size: 20px; }
+      .scene { inset: 76px 0 30px; }
+      .side { gap: 8px; }
+      .metric-card, .entry-card, .calendar { padding: 13px 15px; }
+      .metric-card h3, .entry-card h3 { margin-bottom: 7px; }
+      .metric-number strong { font-size: 28px; }
+      .meter { margin: 8px 0 5px; }
+      .calendar-head { margin-bottom: 7px; }
+      .weekdays, .days { gap: 2px; }
+      .day { min-height: 25px; }
+      .calendar-note { margin-top: 6px; }
+      .history { grid-column: 1 / -1; padding: 10px 15px; }
+      .history-head { margin-bottom: 5px; }
+      .log-item { padding: 6px 8px; }
+    }
+    @media (min-width: 501px) and (max-width: 700px) {
+      main { padding: 14px 14px 16px; }
+      .topbar { margin-bottom: 10px; }
+      h1 { font-size: 25px; }
+      .subtitle { font-size: 10px; }
+      .grid { grid-template-columns: minmax(0, 1.2fr) minmax(190px, .8fr); gap: 8px; }
+      .visual-card { min-height: 405px; }
+      .visual-head { top: 16px; left: 16px; }
+      .visual-head h2 { font-size: 17px; }
+      .visual-head p { font-size: 9px; }
+      .view-switch { top: 13px; right: 12px; }
+      .view-switch button { padding: 6px 8px; }
+      .scene { inset: 68px 0 26px; }
+      .side { gap: 6px; }
+      .metric-card, .entry-card, .calendar { padding: 10px 11px; }
+      .metric-card h3, .entry-card h3, .calendar-head h3 { font-size: 10px; margin-bottom: 5px; }
+      .metric-number strong { font-size: 23px; }
+      .metric-number span { font-size: 10px; }
+      .metric-foot, .helper, .calendar-note { font-size: 8px; }
+      #liveMetrics { line-height: 1.45; }
+      .meter { height: 5px; margin: 6px 0 4px; }
+      .calendar-head { margin-bottom: 5px; }
+      .calendar-head span { font-size: 8px; }
+      .weekdays { font-size: 7px; }
+      .weekdays, .days { gap: 1px; }
+      .day { min-height: 21px; font-size: 9px; }
+      .calendar-note { margin-top: 4px; }
+      .input-wrap input { font-size: 14px; padding: 6px 0; }
+      .input-wrap span, .log-btn { font-size: 9px; }
+      .history { grid-column: 1 / -1; padding: 8px 11px; }
+      .history h3, .history-head span { font-size: 9px; }
+      .history-head { margin-bottom: 4px; }
+      .log-item { padding: 5px 6px; font-size: 8px; }
+      .log-item time { font-size: 7px; }
+    }
+    @media (max-width: 900px) { .app-shell { grid-template-columns: 1fr; } aside { padding: 15px 18px; flex-direction: row; align-items: center; justify-content: space-between; } .brand { padding: 0; } nav { display: flex; } nav button { padding: 10px; } nav button span, .aside-footer { display: none; } main { padding: 28px 20px; } .grid { grid-template-columns: 1fr; } .visual-card { min-height: 510px; } .history { grid-column: auto; } }
+    @media (max-width: 560px) { aside { overflow-x: auto; } nav button { white-space: nowrap; } .topbar { display: block; } .date { display: inline-block; margin-top: 16px; } .logs { grid-template-columns: repeat(2, 1fr); } .scene-caption { display: block; } .legend { margin-top: 8px; } }
+    @media (min-width: 501px) and (max-width: 900px) {
+      main { padding: 18px 20px 20px; }
+      .topbar { margin-bottom: 14px; }
+      h1 { font-size: 30px; }
+      .grid { grid-template-columns: minmax(0, 1.35fr) minmax(230px, .85fr); gap: 10px; }
+      .visual-card { min-height: 465px; }
+      .visual-head { top: 20px; left: 22px; }
+      .visual-head h2 { font-size: 20px; }
+      .scene { inset: 76px 0 30px; }
+      .side { gap: 8px; }
+      .metric-card, .entry-card, .calendar { padding: 13px 15px; }
+      .metric-card h3, .entry-card h3 { margin-bottom: 7px; }
+      .metric-number strong { font-size: 28px; }
+      .meter { margin: 8px 0 5px; }
+      .calendar-head { margin-bottom: 7px; }
+      .weekdays, .days { gap: 2px; }
+      .day { min-height: 25px; }
+      .calendar-note { margin-top: 6px; }
+      .history { grid-column: 1 / -1; padding: 10px 15px; }
+      .history-head { margin-bottom: 5px; }
+      .log-item { padding: 6px 8px; }
+    }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.169.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside>
+      <div class="brand"><div class="brand-mark"></div><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div>
+      <nav>
+        <button class="active" type="button"><svg viewBox="0 0 24 24"><path d="M3 12 12 4l9 8v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8Z"/><path d="M9 21v-6h6v6"/></svg><span>ダッシュボード</span></button>
+        <button type="button"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 5-7"/></svg><span>アクティビティ</span></button>
+        <button type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>履歴</span></button>
+      </nav>
+      <div class="aside-footer">CYCPLUS DC1<br>ペダリングを、見える変化へ。</div>
+    </aside>
+    <main>
+      <header class="topbar"><div><div class="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p class="subtitle">DC1のペダリングから、今日の消費と積み重ねを可視化。</p></div><div><div class="date" id="connectionStatus">○　DC1 NOT CONNECTED</div><button class="connect-btn" id="connectDc1" type="button">DC1に接続</button></div></header>
+      <section class="grid">
+        <article class="card visual-card">
+          <div class="visual-head"><div class="eyebrow">LIVE 3D VISUALIZATION</div><h2 id="modelTitle">今日の脂肪</h2><p id="modelDescription">今日の運動で消費した脂肪量</p></div>
+          <div class="view-switch"><button class="active" data-view="today" type="button">今日</button><button data-view="total" type="button">累積</button></div>
+          <div class="scene" id="scene"><canvas id="sceneCanvas" aria-label="脂肪の3Dモデル"></canvas><div class="model-shadow"></div><div class="scale-reference"><span>500 mL<br>約21 cm</span></div><div class="zoom-controls" id="zoom-controls" aria-label="3D表示の拡大縮小"><button id="zoomOut" type="button" aria-label="縮小">-</button><span class="zoom-level" id="zoomLevel">1.0x</span><button id="zoomReset" type="button" aria-label="倍率をリセット">1:1</button><button id="zoomIn" type="button" aria-label="拡大">+</button></div></div>
+          <div class="scene-caption"><span class="drag-note">3D / AUTO ROTATE</span><span class="legend"><i></i><span id="visualAmount">13.2 g 脂肪</span></span></div>
+        </article>
+        <div class="side">
+          <article class="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div class="metric-number"><strong id="calories">106</strong><span>kcal</span></div><p class="helper">脂肪換算 <strong id="todayFat">13.3</strong> g　（1 kcal ≒ 0.125 g）</p><div class="meter"><div id="meterFill"></div></div><div class="metric-foot"><span>目標 170 kcal</span><span id="goalRate">62%</span></div><div class="speed-dashboard"><div><small>LIVE SPEED</small><strong id="speedValue">-- <span>km/h</span></strong></div><div class="live-stats"><span id="cadenceValue">-- rpm</span><span id="powerValue">-- W</span></div></div></article>
+          <article class="card metric-card"><h3>累積した脂肪</h3><div class="metric-number"><strong id="totalFat">286</strong><span>g</span></div><p class="helper">これまでのログから計算された<br>累積消費脂肪量です。</p></article>
+          <article class="card calendar"><div class="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div class="weekdays"><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span><span>日</span></div><div class="days" id="calendarDays"></div><p class="calendar-note" id="selectedDateLabel">9月22日を表示中</p></article>
+          <article class="card entry-card"><h3>運動ログを追加</h3><div class="input-row"><label class="input-wrap"><input id="calorieInput" type="number" min="1" value="106" aria-label="消費カロリー"><span>kcal</span></label><button class="log-btn" id="addLog" type="button">記録する</button></div><p class="helper">1 kcal ≒ 0.125 g 脂肪として表示します。</p></article>
+        </div>
+        <article class="card history"><div class="history-head"><h3>最近のアクティビティ</h3><span id="logCount">今月 4件</span></div><div class="logs" id="logs"><div class="log-item"><time>09.22　07:42</time><strong>106 kcal</strong></div><div class="log-item"><time>09.21　18:10</time><strong>84 kcal</strong></div><div class="log-item"><time>09.19　08:03</time><strong>72 kcal</strong></div><div class="log-item"><time>09.17　19:26</time><strong>91 kcal</strong></div></div></article>
+      </section>
+    </main>
+  </div>
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.169.0/build/three.module.js';
+    import { GLTFLoader } from 'https://unpkg.com/three@0.169.0/examples/jsm/loaders/GLTFLoader.js';
+
+    const state = { selectedDate: '2026-09-22', view: 'today', rotationX: 0, rotationY: 0, zoom: 1, activeFatReference: 0, liveSpeed: null, liveCadence: null, livePower: null, logsByDate: { '2026-09-17': 91, '2026-09-19': 72, '2026-09-21': 84, '2026-09-22': 106 } };
+    const $ = (id) => document.getElementById(id);
+    const FTMS_SERVICE = 0x1826;
+    const INDOOR_BIKE_DATA = 0x2ad2;
+    let dc1Device;
+    let dc1Characteristic;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(28, 1, .1, 100);
+    camera.position.set(0, .1, 6.4);
+    const renderer = new THREE.WebGLRenderer({ canvas: $('sceneCanvas'), alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    const fatGroup = new THREE.Group();
+    scene.add(fatGroup);
+    const referenceGroup = new THREE.Group();
+    referenceGroup.position.set(.88, -.08, .15);
+    scene.add(referenceGroup);
+    scene.add(new THREE.HemisphereLight(0xfff7d9, 0x9aaf94, 2.8));
+    const keyLight = new THREE.DirectionalLight(0xfff1c6, 3.4);
+    keyLight.position.set(-3, 5, 4);
+    keyLight.castShadow = true;
+    scene.add(keyLight);
+    const rimLight = new THREE.DirectionalLight(0xd6e8bd, 1.5);
+    rimLight.position.set(4, 1, -3);
+    scene.add(rimLight);
+    const fatGeometry = new THREE.SphereGeometry(1, 96, 56);
+    const positions = fatGeometry.attributes.position;
+    for (let index = 0; index < positions.count; index += 1) {
+      const point = new THREE.Vector3().fromBufferAttribute(positions, index);
+        const surfaceNoise = Math.sin(point.x * 15 + point.z * 8) * Math.sin(point.y * 17 - point.x * 4) * .045 + Math.sin(point.z * 23 - point.y * 9) * .018 + Math.sin((point.x + point.z) * 37) * .01;
+        const edgeNoise = Math.sin(point.y * 13 + point.z * 9) * Math.sin(point.x * 7) * .018;
+      point.multiplyScalar(1 + surfaceNoise + edgeNoise);
+      point.x *= 1.48;
+      point.y *= .68;
+      point.z *= .95;
+      positions.setXYZ(index, point.x, point.y, point.z);
+    }
+    fatGeometry.computeVertexNormals();
+    const fatMaterial = new THREE.MeshPhysicalMaterial({ color: 0xe8d2a0, roughness: .82, metalness: 0, clearcoat: .08, clearcoatRoughness: .72, sheen: .2, sheenColor: 0xffe9b4 });
+    const fatMesh = new THREE.Mesh(fatGeometry, fatMaterial);
+    fatMesh.castShadow = true;
+    fatMesh.receiveShadow = true;
+    fatGroup.add(fatMesh);
+    const fatAssetCache = new Map();
+    const loadFatAsset = (path, referenceGrams) => new Promise((resolve) => {
+      if (fatAssetCache.has(path)) { resolve(fatAssetCache.get(path).clone(true)); return; }
+      new GLTFLoader().load(path, (gltf) => {
+        const asset = gltf.scene;
+        const bounds = new THREE.Box3().setFromObject(asset);
+        const size = bounds.getSize(new THREE.Vector3());
+        const center = bounds.getCenter(new THREE.Vector3());
+        asset.position.sub(center);
+        asset.scale.setScalar(2.96 / Math.max(size.x, size.y, size.z, .001));
+        asset.userData.referenceGrams = referenceGrams;
+        asset.traverse((part) => { if (part.isMesh) { part.castShadow = true; part.receiveShadow = true; } });
+        fatAssetCache.set(path, asset);
+        resolve(asset.clone(true));
+      }, undefined, () => resolve(null));
+    });
+    const updateFatAsset = async (grams) => {
+      const asset = grams >= 100
+        ? await loadFatAsset('adipose-100g.glb', 100)
+        : await loadFatAsset('adipose-10g.glb', 10);
+      if (!asset) return;
+      fatGroup.clear();
+      fatGroup.add(asset);
+      render();
+    };
+    const bottleMaterial = new THREE.MeshPhysicalMaterial({ color: 0xb8d1c0, roughness: .42, transmission: .12, transparent: true, opacity: .72 });
+    const bottleCapMaterial = new THREE.MeshStandardMaterial({ color: 0x87a88d, roughness: .7 });
+    const bottleBody = new THREE.Mesh(new THREE.CylinderGeometry(.18, .2, 1.05, 32), bottleMaterial);
+    bottleBody.position.y = .53;
+    const bottleShoulder = new THREE.Mesh(new THREE.ConeGeometry(.18, .16, 32), bottleMaterial);
+    bottleShoulder.position.y = 1.135;
+    const bottleNeck = new THREE.Mesh(new THREE.CylinderGeometry(.105, .105, .14, 24), bottleMaterial);
+    bottleNeck.position.y = 1.285;
+    const bottleCap = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, .1, 24), bottleCapMaterial);
+    bottleCap.position.y = 1.405;
+    const bottleBaseRing = new THREE.Mesh(new THREE.TorusGeometry(.19, .018, 8, 32), bottleCapMaterial);
+    bottleBaseRing.rotation.x = Math.PI / 2;
+    bottleBaseRing.position.y = .08;
+    const bottleShoulderRing = new THREE.Mesh(new THREE.TorusGeometry(.145, .012, 8, 32), bottleMaterial);
+    bottleShoulderRing.rotation.x = Math.PI / 2;
+    bottleShoulderRing.position.y = 1.1;
+    const bottleLabel = new THREE.Mesh(new THREE.CylinderGeometry(.205, .205, .28, 32, 1, true), new THREE.MeshStandardMaterial({ color: 0xd7e7d2, roughness: .85, transparent: true, opacity: .72 }));
+    bottleLabel.position.y = .68;
+    [bottleBody, bottleShoulder, bottleNeck, bottleCap, bottleBaseRing, bottleShoulderRing, bottleLabel].forEach((part) => { part.castShadow = true; referenceGroup.add(part); });
+    const bottleLoader = new GLTFLoader();
+    bottleLoader.load('pet-bottle-500ml.glb', (gltf) => {
+      const externalBottle = gltf.scene;
+      const bounds = new THREE.Box3().setFromObject(externalBottle);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      externalBottle.position.sub(center);
+      externalBottle.scale.setScalar(1.52 / Math.max(size.y, .001));
+      externalBottle.traverse((part) => { if (part.isMesh) { part.castShadow = true; part.receiveShadow = true; } });
+      referenceGroup.clear();
+      referenceGroup.add(externalBottle);
+    }, undefined, () => {});
+    const resizeScene = () => {
+      const bounds = $('scene').getBoundingClientRect();
+      renderer.setSize(bounds.width, bounds.height, false);
+      camera.aspect = bounds.width / bounds.height;
+      camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize', resizeScene);
+    resizeScene();
+    const animateScene = () => { requestAnimationFrame(animateScene); fatGroup.rotation.z = Math.sin(performance.now() * .00045) * .018; renderer.render(scene, camera); };
+    animateScene();
+    const totalCalories = () => Object.values(state.logsByDate).reduce((sum, calories) => sum + calories, 0);
+    const selectedCalories = () => state.logsByDate[state.selectedDate] || 0;
+    const render = () => {
+      const isToday = state.view === 'today';
+      const todayCalories = selectedCalories();
+      const accumulatedFat = totalCalories() * .125;
+      $('modelTitle').textContent = isToday ? '今日の脂肪' : '累積した脂肪';
+      $('modelDescription').textContent = isToday ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量';
+      $('visualAmount').textContent = `${(isToday ? todayCalories * .125 : accumulatedFat).toFixed(1)} g 脂肪`;
+      fatGroup.rotation.x = THREE.MathUtils.degToRad(state.rotationX);
+      fatGroup.rotation.y = THREE.MathUtils.degToRad(state.rotationY);
+      const visualFatGrams = isToday ? todayCalories * .125 : accumulatedFat;
+      const desiredFatReference = visualFatGrams >= 100 ? 100 : 10;
+      if (state.activeFatReference !== desiredFatReference) {
+        state.activeFatReference = desiredFatReference;
+        updateFatAsset(visualFatGrams);
+      }
+      const modelScale = Math.max(.075, .105 * Math.cbrt(Math.max(visualFatGrams, .1) / desiredFatReference));
+      fatGroup.scale.set(modelScale, modelScale, modelScale);
+      camera.position.z = 6.4 / state.zoom;
+      $('zoomLevel').textContent = `${state.zoom.toFixed(1)}x`;
+      $('calories').textContent = todayCalories;
+      $('todayFat').textContent = (todayCalories * .125).toFixed(1);
+      $('totalFat').textContent = accumulatedFat.toFixed(1);
+      $('speedValue').innerHTML = `${state.liveSpeed === null ? '--' : state.liveSpeed.toFixed(1)} <span>km/h</span>`;
+      $('cadenceValue').textContent = `${state.liveCadence === null ? '--' : state.liveCadence.toFixed(1)} rpm`;
+      $('powerValue').textContent = `${state.livePower === null ? '--' : state.livePower} W`;
+      const rate = Math.min(100, Math.round(todayCalories / 170 * 100));
+      $('goalRate').textContent = `${rate}%`;
+      $('meterFill').style.width = `${rate}%`;
+    };
+    const renderCalendar = () => {
+      const calendar = $('calendarDays');
+      calendar.innerHTML = '';
+      ['2026-08-31', ...Array.from({ length: 30 }, (_, index) => `2026-09-${String(index + 1).padStart(2, '0')}`)].forEach((date) => {
+        const day = document.createElement('button');
+        day.className = `day${state.logsByDate[date] ? ' has-log' : ''}${date === state.selectedDate ? ' selected' : ''}`;
+        day.type = 'button';
+        day.textContent = Number(date.slice(-2));
+        if (date === '2026-08-31') day.classList.add('muted');
+        day.addEventListener('click', () => {
+          state.selectedDate = date;
+          $('selectedDateLabel').textContent = `${Number(date.slice(5, 7))}月${Number(date.slice(-2))}日を表示中`;
+          renderCalendar();
+          render();
+        });
+        calendar.append(day);
+      });
+    };
+    document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => {
+      state.view = button.dataset.view;
+      document.querySelectorAll('[data-view]').forEach((item) => item.classList.toggle('active', item === button));
+      render();
+    }));
+    let dragStart;
+    $('scene').addEventListener('pointerdown', (event) => {
+      dragStart = { x: event.clientX, y: event.clientY };
+      event.currentTarget.classList.add('dragging');
+      event.currentTarget.setPointerCapture(event.pointerId);
+    });
+    $('scene').addEventListener('pointermove', (event) => {
+      if (!dragStart) return;
+      state.rotationY += (event.clientX - dragStart.x) * .6;
+      state.rotationX += (event.clientY - dragStart.y) * .6;
+      dragStart = { x: event.clientX, y: event.clientY };
+      render();
+    });
+    $('scene').addEventListener('pointerup', (event) => {
+      dragStart = null;
+      event.currentTarget.classList.remove('dragging');
+    });
+    $('zoom-controls').addEventListener('pointerdown', (event) => event.stopPropagation());
+    const setZoom = (zoom) => { state.zoom = Math.min(3, Math.max(.5, zoom)); render(); };
+    $('zoomIn').addEventListener('click', () => setZoom(state.zoom * 1.25));
+    $('zoomOut').addEventListener('click', () => setZoom(state.zoom / 1.25));
+    $('zoomReset').addEventListener('click', () => setZoom(1));
+    $('scene').addEventListener('wheel', (event) => { event.preventDefault(); setZoom(state.zoom * (event.deltaY < 0 ? 1.08 : .93)); }, { passive: false });
+    const parseIndoorBikeData = (event) => {
+      const data = new DataView(event.target.value.buffer);
+      const flags = data.getUint16(0, true);
+      let offset = 2;
+      const metrics = {};
+      if ((flags & 1) === 0) { metrics.speed = data.getUint16(offset, true) / 100; offset += 2; }
+      if (flags & 2) offset += 2;
+      if (flags & 4) { metrics.cadence = data.getUint16(offset, true) / 2; offset += 2; }
+      if (flags & 8) offset += 2;
+      if (flags & 16) offset += 3;
+      if (flags & 32) offset += 2;
+      if (flags & 64) { metrics.power = data.getInt16(offset, true); offset += 2; }
+      if (flags & 128) offset += 2;
+      if (flags & 256 && offset + 2 <= data.byteLength) { metrics.calories = data.getUint16(offset, true); offset += 2; }
+      if (metrics.speed !== undefined || metrics.cadence !== undefined || metrics.power !== undefined) {
+        if (metrics.speed !== undefined) state.liveSpeed = metrics.speed;
+        if (metrics.cadence !== undefined) state.liveCadence = metrics.cadence;
+        if (metrics.power !== undefined) state.livePower = metrics.power;
+        render();
+      }
+      if (metrics.calories !== undefined && metrics.calories > 0) {
+        state.logsByDate[state.selectedDate] = metrics.calories;
+        render();
+      }
+    };
+    const updateConnectionStatus = (connected, label = '') => {
+      $('connectionStatus').textContent = connected ? `●　${label || 'DC1 CONNECTED'}` : '○　DC1 NOT CONNECTED';
+      $('connectDc1').textContent = connected ? '接続済み / 切断' : 'DC1に接続';
+      $('connectDc1').classList.toggle('connected', connected);
+    };
+    const withTimeout = (promise, label, milliseconds = 10000) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label}がタイムアウトしました`)), milliseconds))
+    ]);
+    $('connectDc1').addEventListener('click', async () => {
+      if (!navigator.bluetooth) {
+        updateConnectionStatus(false);
+        $('connectionStatus').textContent = '×　Web Bluetooth非対応';
+        return;
+      }
+      try {
+        if (dc1Device?.gatt?.connected) {
+          dc1Device.gatt.disconnect();
+          return;
+        }
+        $('connectDc1').textContent = 'デバイスを選択中...';
+        dc1Device = await withTimeout(navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'CYCPLUS' }], optionalServices: [FTMS_SERVICE] }), 'デバイス選択');
+        dc1Device.addEventListener('gattserverdisconnected', () => { dc1Characteristic = undefined; updateConnectionStatus(false); });
+        $('connectionStatus').textContent = `●　${dc1Device.name || 'DC1'} を検出、GATT接続中...`;
+        const server = await withTimeout(dc1Device.gatt.connect(), 'GATT接続');
+        $('connectionStatus').textContent = '●　FTMSサービスを確認中...';
+        const service = await withTimeout(server.getPrimaryService(FTMS_SERVICE), 'FTMSサービス取得');
+        dc1Characteristic = await withTimeout(service.getCharacteristic(INDOOR_BIKE_DATA), 'Indoor Bike Data取得');
+        await withTimeout(dc1Characteristic.startNotifications(), '通知開始');
+        dc1Characteristic.addEventListener('characteristicvaluechanged', parseIndoorBikeData);
+        updateConnectionStatus(true, `${dc1Device.name || 'DC1'} CONNECTED`);
+      } catch (error) {
+        if (dc1Device?.gatt?.connected) dc1Device.gatt.disconnect();
+        updateConnectionStatus(false);
+        if (error.name !== 'NotFoundError') $('connectionStatus').textContent = `×　接続失敗: ${error.message}`;
+      }
+    });
+    $('addLog').addEventListener('click', () => {
+      const amount = Number($('calorieInput').value);
+      if (!amount || amount < 1) return;
+      state.logsByDate[state.selectedDate] = selectedCalories() + amount;
+      const now = new Date();
+      const time = `${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}　${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const item = document.createElement('div');
+      item.className = 'log-item';
+      item.innerHTML = `<time>${time}</time><strong>${amount} kcal</strong>`;
+      $('logs').prepend(item);
+      $('logCount').textContent = `今月 ${$('logs').children.length}件`;
+      $('calorieInput').value = '';
+      renderCalendar();
+      render();
+    });
+    renderCalendar();
+    render();
+  </script>
+</body>
+</html>

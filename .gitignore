@@ -1,0 +1,13 @@
+# Local development
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# Vercel local metadata
+.vercel/
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
