@@ -29,7 +29,7 @@ git push -u origin main
 
 Do not put GitHub or Vercel tokens in the repository. Use the browser login flow or Git Credential Manager when Git asks for authentication.
 
-`index.html`, `vercel.json`, and the four `.glb` files are deployed from the repository root. The GLB files are served with `model/gltf-binary` and cached as immutable assets.
+`index.html`, `vercel.json`, and the four `.glb` files are deployed from the repository root. The GLB files are loaded by Three.js using their repository-relative paths.
 
 ## Vercel CLI
 
