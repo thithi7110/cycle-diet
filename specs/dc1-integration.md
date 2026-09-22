@@ -33,6 +33,10 @@ The first integration only subscribes to Indoor Bike Data and does not change re
 - Elapsed time -> session duration
 - Total distance -> activity summary when present
 
+## Session calorie accumulation
+
+FTMS Expended Energy is treated as a connection-session counter. On each new DC1 connection, the first received calorie value becomes a baseline. Only later positive deltas are added to the selected day's stored calories. A reconnect therefore cannot overwrite the day's existing total with the device's reset session value.
+
 The Indoor Bike Data flags must be parsed before reading optional fields. Values and offsets must follow the FTMS characteristic definition rather than assuming a fixed packet layout.
 
 ## Product behavior

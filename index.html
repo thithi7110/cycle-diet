@@ -45,6 +45,12 @@
     .connect-btn { margin-top: 10px; border: 0; border-radius: 8px; background: var(--green); color: white; padding: 10px 14px; cursor: pointer; font-size: 11px; font-weight: 700; }
     .connect-btn:hover { background: #205d40; }
     .connect-btn.connected { background: #607a62; }
+    .auth-panel { display: flex; gap: 5px; align-items: center; margin-top: 8px; }
+    .auth-panel input { width: 120px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-size: 10px; background: white; }
+    .auth-panel button { border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); padding: 7px 8px; cursor: pointer; font-size: 10px; }
+    .auth-panel button.primary { background: var(--ink); color: white; border-color: var(--ink); }
+    .auth-panel button:hover { opacity: .8; }
+    .auth-status { color: var(--muted); font-size: 9px; margin: 5px 0 0; text-align: right; }
     .grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .8fr); gap: 18px; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
     .visual-card { min-height: 580px; overflow: hidden; position: relative; background: #eef2e6; }
@@ -199,7 +205,53 @@
       .log-item time { font-size: 7px; }
     }
     @media (max-width: 900px) { .app-shell { grid-template-columns: 1fr; } aside { padding: 15px 18px; flex-direction: row; align-items: center; justify-content: space-between; } .brand { padding: 0; } nav { display: flex; } nav button { padding: 10px; } nav button span, .aside-footer { display: none; } main { padding: 28px 20px; } .grid { grid-template-columns: 1fr; } .visual-card { min-height: 510px; } .history { grid-column: auto; } }
-    @media (max-width: 560px) { aside { overflow-x: auto; } nav button { white-space: nowrap; } .topbar { display: block; } .date { display: inline-block; margin-top: 16px; } .logs { grid-template-columns: repeat(2, 1fr); } .scene-caption { display: block; } .legend { margin-top: 8px; } }
+    @media (max-width: 560px) {
+      aside { height: 58px; overflow: hidden; padding: 10px 14px; }
+      .brand { gap: 8px; }
+      .brand-mark { width: 27px; height: 27px; border-width: 2px; }
+      .brand-mark::after { width: 7px; height: 7px; top: 8px; left: 8px; }
+      .brand strong { font-size: 11px; }
+      .brand small { font-size: 7px; }
+      nav { gap: 2px; }
+      nav button { width: 30px; height: 30px; padding: 7px; justify-content: center; }
+      nav button span { display: none; }
+      main { padding: 14px 12px 24px; }
+      .topbar { display: block; margin-bottom: 12px; }
+      h1 { font-size: 25px; }
+      .subtitle { font-size: 10px; }
+      .date { display: inline-block; margin-top: 12px; padding: 8px 10px; font-size: 9px; }
+      .connect-btn { margin-top: 6px; padding: 8px 11px; font-size: 10px; }
+      .grid { gap: 10px; }
+      .visual-card { min-height: 350px; order: 3; }
+      .visual-head { top: 17px; left: 17px; }
+      .visual-head h2 { font-size: 19px; margin-top: 6px; }
+      .visual-head p { font-size: 10px; }
+      .view-switch { top: 12px; right: 12px; }
+      .view-switch button { padding: 6px 8px; }
+      .scene { inset: 70px 0 28px; }
+      .scene-caption { display: block; left: 17px; right: 17px; bottom: 13px; }
+      .legend { margin-top: 6px; }
+      .scale-reference { right: 16px; bottom: 25px; }
+      .zoom-controls { left: 15px; bottom: 20px; }
+      .side { display: contents; }
+      .metric-card, .entry-card, .calendar { padding: 13px 12px; }
+      .metric-card h3, .entry-card h3, .calendar-head h3 { font-size: 10px; margin-bottom: 8px; }
+      .metric-number strong { font-size: 28px; }
+      .metric-number span { font-size: 10px; }
+      .metric-card:first-child { grid-column: 1 / -1; }
+      .metric-card:first-child { order: 1; }
+      .metric-card:nth-child(2) { order: 2; }
+      .speed-dashboard { margin-top: 9px; padding-top: 8px; }
+      .speed-dashboard strong { font-size: 22px; }
+      .live-stats { gap: 7px; font-size: 8px; }
+      .calendar, .entry-card { grid-column: 1 / -1; }
+      .calendar { order: 4; }
+      .entry-card { order: 5; }
+      .weekdays, .days { gap: 3px; }
+      .day { min-height: 34px; }
+      .logs { grid-template-columns: repeat(2, 1fr); }
+      .history { padding: 14px 12px; order: 3; }
+    }
     @media (min-width: 501px) and (max-width: 900px) {
       main { padding: 18px 20px 20px; }
       .topbar { margin-bottom: 14px; }
@@ -226,6 +278,8 @@
   <script type="importmap">
     { "imports": { "three": "https://unpkg.com/three@0.169.0/build/three.module.js" } }
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -239,7 +293,7 @@
       <div class="aside-footer">CYCPLUS DC1<br>ペダリングを、見える変化へ。</div>
     </aside>
     <main>
-      <header class="topbar"><div><div class="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p class="subtitle">DC1のペダリングから、今日の消費と積み重ねを可視化。</p></div><div><div class="date" id="connectionStatus">○　DC1 NOT CONNECTED</div><button class="connect-btn" id="connectDc1" type="button">DC1に接続</button></div></header>
+      <header class="topbar"><div><div class="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p class="subtitle">DC1のペダリングから、今日の消費と積み重ねを可視化。</p></div><div><div class="date" id="connectionStatus">○　DC1 NOT CONNECTED</div><button class="connect-btn" id="connectDc1" type="button">DC1に接続</button><div class="auth-panel" id="authPanel"><input id="authEmail" type="email" placeholder="メールアドレス" aria-label="メールアドレス"><input id="authPassword" type="password" placeholder="パスワード" aria-label="パスワード"><button class="primary" id="signIn" type="button">ログイン</button><button id="signUp" type="button">登録</button></div><p class="auth-status" id="authStatus">ローカルデモ</p></div></header>
       <section class="grid">
         <article class="card visual-card">
           <div class="visual-head"><div class="eyebrow">LIVE 3D VISUALIZATION</div><h2 id="modelTitle">今日の脂肪</h2><p id="modelDescription">今日の運動で消費した脂肪量</p></div>
@@ -261,8 +315,12 @@
     import * as THREE from 'https://unpkg.com/three@0.169.0/build/three.module.js';
     import { GLTFLoader } from 'https://unpkg.com/three@0.169.0/examples/jsm/loaders/GLTFLoader.js';
 
-    const state = { selectedDate: '2026-09-22', view: 'today', rotationX: 0, rotationY: 0, zoom: 1, activeFatReference: 0, liveSpeed: null, liveCadence: null, livePower: null, logsByDate: { '2026-09-17': 91, '2026-09-19': 72, '2026-09-21': 84, '2026-09-22': 106 } };
+    const state = { selectedDate: '2026-09-22', view: 'today', rotationX: 0, rotationY: 0, zoom: 1, activeFatReference: 0, liveSpeed: null, liveCadence: null, livePower: null, lastFtmsTime: null, deviceSessionCalories: null, dropEnergyKcal: 0, user: null, logsByDate: { '2026-09-17': 91, '2026-09-19': 72, '2026-09-21': 84, '2026-09-22': 106 } };
     const $ = (id) => document.getElementById(id);
+    const supabaseConfig = window.SUPABASE_CONFIG || { url: '', anonKey: '' };
+    const supabaseClient = supabaseConfig.url && supabaseConfig.anonKey
+      ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey)
+      : null;
     const FTMS_SERVICE = 0x1826;
     const INDOOR_BIKE_DATA = 0x2ad2;
     let dc1Device;
@@ -276,6 +334,18 @@
     renderer.shadowMap.enabled = true;
     const fatGroup = new THREE.Group();
     scene.add(fatGroup);
+    const fatDropGroup = new THREE.Group();
+    scene.add(fatDropGroup);
+    const fatDropGeometry = new THREE.SphereGeometry(.16, 16, 10);
+    const fatDropMaterial = new THREE.MeshPhysicalMaterial({ color: 0xf1c766, roughness: .5, clearcoat: .2, clearcoatRoughness: .4 });
+    const fallingDrops = [];
+    const fatSurfaceRaycaster = new THREE.Raycaster();
+    const dropWorldPosition = new THREE.Vector3();
+    const dropRayOrigin = new THREE.Vector3();
+    const downDirection = new THREE.Vector3(0, -1, 0);
+    let dropTimer = 0;
+    let dropCount = 0;
+    let dropTarget = 0;
     const referenceGroup = new THREE.Group();
     referenceGroup.position.set(.88, -.08, .15);
     scene.add(referenceGroup);
@@ -369,10 +439,77 @@
     };
     window.addEventListener('resize', resizeScene);
     resizeScene();
-    const animateScene = () => { requestAnimationFrame(animateScene); fatGroup.rotation.z = Math.sin(performance.now() * .00045) * .018; renderer.render(scene, camera); };
+    const spawnFatDrop = () => {
+      if (dropCount >= dropTarget || fallingDrops.length >= 1) return;
+      const drop = new THREE.Mesh(fatDropGeometry, fatDropMaterial);
+      drop.position.set((Math.random() - .5) * 2.1, 3.25 + Math.random() * .45, (Math.random() - .5) * .85);
+      drop.scale.set(.7 + Math.random() * .35, 1.25 + Math.random() * .5, .7 + Math.random() * .35);
+      fatDropGroup.add(drop);
+      fallingDrops.push({ mesh: drop, start: drop.position.clone(), target: new THREE.Vector3((Math.random() - .5) * .7, Math.random() * .12 - .06, 0), duration: 2.6 + Math.random() * 2.1, elapsed: 0 });
+      dropCount += 1;
+    };
+    const updateFatDrops = (delta) => {
+      dropTimer -= delta;
+      if (dropTimer <= 0) { spawnFatDrop(); dropTimer = 1.2 + Math.random() * 3.2; }
+      for (let index = fallingDrops.length - 1; index >= 0; index -= 1) {
+        const fallingDrop = fallingDrops[index];
+        fallingDrop.elapsed += delta;
+        const progress = Math.min(fallingDrop.elapsed / fallingDrop.duration, 1);
+        const eased = progress * progress * (3 - 2 * progress);
+        fallingDrop.mesh.position.lerpVectors(fallingDrop.start, fallingDrop.target, eased);
+        fallingDrop.mesh.rotation.z += delta * 2;
+        fallingDrop.mesh.scale.y = (1.25 + Math.random() * .08) * (1 - progress * .45);
+        fallingDrop.mesh.getWorldPosition(dropWorldPosition);
+        dropRayOrigin.copy(dropWorldPosition).addScaledVector(downDirection, -.04);
+        fatSurfaceRaycaster.set(dropRayOrigin, downDirection);
+        const intersections = fatSurfaceRaycaster.intersectObject(fatGroup, true);
+        const surfaceDistance = intersections.length ? intersections[0].distance : Infinity;
+        const contactDistance = .16 * fatDropGroup.scale.y * 1.35;
+        if (surfaceDistance <= contactDistance || progress >= 1) { fatDropGroup.remove(fallingDrop.mesh); fallingDrops.splice(index, 1); }
+      }
+    };
+    let previousFrame = performance.now();
+    const animateScene = () => { requestAnimationFrame(animateScene); const now = performance.now(); const delta = Math.min((now - previousFrame) / 1000, .05); previousFrame = now; fatGroup.rotation.z = Math.sin(now * .00045) * .018; fatDropGroup.rotation.copy(fatGroup.rotation); fatDropGroup.scale.copy(fatGroup.scale); updateFatDrops(delta); renderer.render(scene, camera); };
     animateScene();
     const totalCalories = () => Object.values(state.logsByDate).reduce((sum, calories) => sum + calories, 0);
-    const selectedCalories = () => state.logsByDate[state.selectedDate] || 0;
+    const selectedCalories = (date = state.selectedDate) => state.logsByDate[date] || 0;
+    const saveDailyLog = async (date = state.selectedDate) => {
+      if (!supabaseClient || !state.user) return;
+      await supabaseClient.from('daily_logs').upsert({ user_id: state.user.id, log_date: date, calories: selectedCalories(date) }, { onConflict: 'user_id,log_date' });
+    };
+    const loadUserLogs = async () => {
+      if (!supabaseClient || !state.user) return;
+      const { data, error } = await supabaseClient.from('daily_logs').select('log_date,calories').eq('user_id', state.user.id);
+      if (error) { $('authStatus').textContent = `保存データ取得失敗: ${error.message}`; return; }
+      state.logsByDate = Object.fromEntries((data || []).map((row) => [row.log_date, Number(row.calories) || 0]));
+      renderCalendar();
+      render();
+    };
+    const updateAuthUi = () => {
+      const configured = Boolean(supabaseClient);
+      $('authPanel').style.display = configured && !state.user ? 'flex' : 'none';
+      $('authStatus').textContent = state.user ? `${state.user.email} で保存中` : configured ? 'ログインすると個人保存' : 'Supabase未設定 / ローカルデモ';
+      if (state.user) {
+        const logout = document.createElement('button');
+        logout.textContent = 'ログアウト';
+        logout.type = 'button';
+        logout.addEventListener('click', () => supabaseClient.auth.signOut());
+        $('authPanel').replaceChildren(logout);
+        $('authPanel').style.display = 'flex';
+      }
+    };
+    const setupAuth = async () => {
+      if (!supabaseClient) { updateAuthUi(); return; }
+      const { data } = await supabaseClient.auth.getSession();
+      state.user = data.session?.user || null;
+      updateAuthUi();
+      if (state.user) await loadUserLogs();
+      supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+        state.user = session?.user || null;
+        updateAuthUi();
+        if (state.user) await loadUserLogs();
+      });
+    };
     const render = () => {
       const isToday = state.view === 'today';
       const todayCalories = selectedCalories();
@@ -466,11 +603,34 @@
         if (metrics.speed !== undefined) state.liveSpeed = metrics.speed;
         if (metrics.cadence !== undefined) state.liveCadence = metrics.cadence;
         if (metrics.power !== undefined) state.livePower = metrics.power;
+        const now = performance.now();
+        const elapsedSeconds = state.lastFtmsTime === null ? 0 : Math.min((now - state.lastFtmsTime) / 1000, 2);
+        state.lastFtmsTime = now;
+        if (metrics.speed !== undefined && metrics.speed > 0 && elapsedSeconds > 0) {
+          state.dropEnergyKcal += metrics.speed * elapsedSeconds / 360;
+          const newDropUnits = Math.floor(state.dropEnergyKcal * 10);
+          if (newDropUnits > 0) {
+            dropTarget += newDropUnits;
+            state.dropEnergyKcal -= newDropUnits / 10;
+          }
+        }
         render();
       }
       if (metrics.calories !== undefined && metrics.calories > 0) {
-        state.logsByDate[state.selectedDate] = metrics.calories;
-        render();
+        if (state.deviceSessionCalories === null) {
+          state.deviceSessionCalories = metrics.calories;
+        } else if (metrics.calories >= state.deviceSessionCalories) {
+          const sessionDelta = metrics.calories - state.deviceSessionCalories;
+          if (sessionDelta > 0) {
+            state.logsByDate[state.selectedDate] = selectedCalories() + sessionDelta;
+            saveDailyLog();
+          }
+          state.deviceSessionCalories = metrics.calories;
+          renderCalendar();
+          render();
+        } else {
+          state.deviceSessionCalories = metrics.calories;
+        }
       }
     };
     const updateConnectionStatus = (connected, label = '') => {
@@ -498,6 +658,9 @@
         dc1Device.addEventListener('gattserverdisconnected', () => { dc1Characteristic = undefined; updateConnectionStatus(false); });
         $('connectionStatus').textContent = `●　${dc1Device.name || 'DC1'} を検出、GATT接続中...`;
         const server = await withTimeout(dc1Device.gatt.connect(), 'GATT接続');
+        state.deviceSessionCalories = null;
+        state.lastFtmsTime = null;
+        state.dropEnergyKcal = 0;
         $('connectionStatus').textContent = '●　FTMSサービスを確認中...';
         const service = await withTimeout(server.getPrimaryService(FTMS_SERVICE), 'FTMSサービス取得');
         dc1Characteristic = await withTimeout(service.getCharacteristic(INDOOR_BIKE_DATA), 'Indoor Bike Data取得');
@@ -514,6 +677,7 @@
       const amount = Number($('calorieInput').value);
       if (!amount || amount < 1) return;
       state.logsByDate[state.selectedDate] = selectedCalories() + amount;
+      saveDailyLog();
       const now = new Date();
       const time = `${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}　${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const item = document.createElement('div');
@@ -527,6 +691,17 @@
     });
     renderCalendar();
     render();
+    $('signIn').addEventListener('click', async () => {
+      if (!supabaseClient) { $('authStatus').textContent = 'Supabase設定が必要です'; return; }
+      const { error } = await supabaseClient.auth.signInWithPassword({ email: $('authEmail').value, password: $('authPassword').value });
+      if (error) $('authStatus').textContent = `ログイン失敗: ${error.message}`;
+    });
+    $('signUp').addEventListener('click', async () => {
+      if (!supabaseClient) { $('authStatus').textContent = 'Supabase設定が必要です'; return; }
+      const { error } = await supabaseClient.auth.signUp({ email: $('authEmail').value, password: $('authPassword').value });
+      $('authStatus').textContent = error ? `登録失敗: ${error.message}` : '確認メールを送信しました';
+    });
+    setupAuth();
   </script>
 </body>
 </html>
