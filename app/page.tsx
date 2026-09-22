@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 
-const demoLogs: Record<string, number> = { '2026-09-17': 91, '2026-09-19': 72, '2026-09-21': 84, '2026-09-22': 106 };
 const FTMS_SERVICE = 0x1826;
 const INDOOR_BIKE_DATA = 0x2ad2;
 const today = '2026-09-22';
@@ -19,7 +18,7 @@ function getSupabase(): SupabaseClient | null {
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneHostRef = useRef<HTMLDivElement>(null);
-  const [logs, setLogs] = useState<Record<string, number>>(demoLogs);
+  const [logs, setLogs] = useState<Record<string, number>>({});
   const [selectedDate, setSelectedDate] = useState(today);
   const [view, setView] = useState<'today' | 'total'>('today');
   const [user, setUser] = useState<User | null>(null);
@@ -36,7 +35,7 @@ export default function Home() {
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const logsRef = useRef(logs);
   logsRef.current = logs;
-  const dropStateRef = useRef({ target: 0, count: 0, timer: 0, energyKcal: 0, lastFtmsTime: null as number | null });
+  const dropStateRef = useRef({ target: 0, count: 0, timer: 0, energyKcal: 0, lastFtmsTime: null as number | null, speed: 0 });
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const zoomControlsRef = useRef<HTMLDivElement>(null);
   const updateFatVisualRef = useRef<(grams: number) => void>(() => {});
@@ -91,7 +90,7 @@ export default function Home() {
     const downDirection = new THREE.Vector3(0, -1, 0);
     const dropState = dropStateRef.current;
     const spawnFatDrop = () => {
-      if (dropState.count >= dropState.target || fallingDrops.length >= 1) return;
+      if (dropState.speed <= 0 || dropState.count >= dropState.target || fallingDrops.length >= 1) return;
       const drop = new THREE.Mesh(fatDropGeometry, fatDropMaterial);
       drop.position.set((Math.random() - .5) * 2.1, 3.25 + Math.random() * .45, (Math.random() - .5) * .85);
       drop.scale.set(.7 + Math.random() * .35, 1.25 + Math.random() * .5, .7 + Math.random() * .35);
@@ -195,6 +194,7 @@ export default function Home() {
         if (flags & 128) offset += 2;
         if (speedValue !== undefined || cadenceValue !== undefined || powerValue !== undefined) {
           const dropState = dropStateRef.current;
+          if (speedValue !== undefined) dropState.speed = speedValue;
           const now = performance.now();
           const elapsedSeconds = dropState.lastFtmsTime === null ? 0 : Math.min((now - dropState.lastFtmsTime) / 1000, 2);
           dropState.lastFtmsTime = now;
@@ -206,8 +206,8 @@ export default function Home() {
         }
         if (flags & 256 && offset + 2 <= data.byteLength) { const calories = data.getUint16(offset, true); if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories; else if (calories >= sessionCaloriesRef.current) { const delta = calories - sessionCaloriesRef.current; if (delta) { const next = (logsRef.current[selectedDate] || 0) + delta; setLogs((current) => ({ ...current, [selectedDate]: next })); saveLog(selectedDate, next); } sessionCaloriesRef.current = calories; } }
       });
-      device.addEventListener('gattserverdisconnected', () => setConnected(false)); setConnected(true); sessionCaloriesRef.current = null;
-      dropStateRef.current.energyKcal = 0; dropStateRef.current.lastFtmsTime = null;
+      device.addEventListener('gattserverdisconnected', () => { setConnected(false); dropStateRef.current.speed = 0; }); setConnected(true); sessionCaloriesRef.current = null;
+      dropStateRef.current.energyKcal = 0; dropStateRef.current.lastFtmsTime = null; dropStateRef.current.speed = 0;
     } catch (error) { setAuthMessage(error instanceof Error ? error.message : '接続に失敗しました'); }
   };
   const totalCalories = Object.values(logs).reduce((sum, value) => sum + value, 0);
