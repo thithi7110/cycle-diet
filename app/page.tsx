@@ -29,8 +29,11 @@ export default function Home() {
   const [cadence, setCadence] = useState<number | null>(null);
   const [power, setPower] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [zoom, setZoom] = useState(1);
   const deviceRef = useRef<BluetoothDevice | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionCaloriesRef = useRef<number | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const logsRef = useRef(logs);
@@ -178,38 +181,79 @@ export default function Home() {
     return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', resize); host.removeEventListener('pointerdown', down); host.removeEventListener('pointermove', move); host.removeEventListener('pointerup', up); host.removeEventListener('wheel', wheel); zoomControls?.removeEventListener('pointerdown', stopZoomPropagation); updateFatVisualRef.current = () => {}; fatDropGeometry.dispose(); fatDropMaterial.dispose(); renderer.dispose(); };
   }, []);
 
+  const attachDevice = async (device: BluetoothDevice) => {
+    deviceRef.current = device;
+    const server = await device.gatt?.connect();
+    const service = await server?.getPrimaryService(FTMS_SERVICE);
+    const characteristic = await service?.getCharacteristic(INDOOR_BIKE_DATA);
+    if (!characteristic) throw new Error('FTMSデータ特性を取得できません');
+    await characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', (event) => {
+      const data = (event.target as BluetoothRemoteGATTCharacteristic).value; if (!data) return;
+      const flags = data.getUint16(0, true); let offset = 2;
+      let speedValue: number | undefined; let cadenceValue: number | undefined; let powerValue: number | undefined;
+      if ((flags & 1) === 0) { speedValue = data.getUint16(offset, true) / 100; setSpeed(speedValue); offset += 2; } if (flags & 2) offset += 2;
+      if (flags & 4) { cadenceValue = data.getUint16(offset, true) / 2; setCadence(cadenceValue); offset += 2; } if (flags & 8) offset += 2; if (flags & 16) offset += 3; if (flags & 32) offset += 2; if (flags & 64) { powerValue = data.getInt16(offset, true); setPower(powerValue); offset += 2; }
+      if (flags & 128) offset += 2;
+      if (speedValue !== undefined || cadenceValue !== undefined || powerValue !== undefined) {
+        const dropState = dropStateRef.current;
+        if (speedValue !== undefined) dropState.speed = speedValue;
+        const now = performance.now();
+        const elapsedSeconds = dropState.lastFtmsTime === null ? 0 : Math.min((now - dropState.lastFtmsTime) / 1000, 2);
+        dropState.lastFtmsTime = now;
+        if (speedValue !== undefined && speedValue > 0 && elapsedSeconds > 0) {
+          dropState.energyKcal += speedValue * elapsedSeconds / 360;
+          const newDropUnits = Math.floor(dropState.energyKcal * 10);
+          if (newDropUnits > 0) { dropState.target += newDropUnits; dropState.energyKcal -= newDropUnits / 10; }
+        }
+      }
+      if (flags & 256 && offset + 2 <= data.byteLength) { const calories = data.getUint16(offset, true); if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories; else if (calories >= sessionCaloriesRef.current) { const delta = calories - sessionCaloriesRef.current; if (delta) { const next = (logsRef.current[selectedDate] || 0) + delta; setLogs((current) => ({ ...current, [selectedDate]: next })); saveLog(selectedDate, next); } sessionCaloriesRef.current = calories; } }
+    });
+    device.addEventListener('gattserverdisconnected', () => {
+      setConnected(false);
+      dropStateRef.current.speed = 0;
+      attemptReconnect(device);
+    }, { once: true });
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+    reconnectAttemptsRef.current = 0;
+    setReconnecting(false);
+    setConnected(true);
+    sessionCaloriesRef.current = null;
+    dropStateRef.current.energyKcal = 0; dropStateRef.current.lastFtmsTime = null; dropStateRef.current.speed = 0;
+  };
+
+  const attemptReconnect = (device: BluetoothDevice) => {
+    if (reconnectTimerRef.current) return;
+    reconnectAttemptsRef.current += 1;
+    if (reconnectAttemptsRef.current > 20) { setReconnecting(false); return; }
+    setReconnecting(true);
+    const delay = Math.min(3000 * reconnectAttemptsRef.current, 15000);
+    reconnectTimerRef.current = setTimeout(async () => {
+      reconnectTimerRef.current = null;
+      try { await attachDevice(device); } catch { attemptReconnect(device); }
+    }, delay);
+  };
+
   const connect = async () => {
     if (!navigator.bluetooth) return setAuthMessage('Web Bluetooth非対応');
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+    reconnectAttemptsRef.current = 0;
+    setReconnecting(false);
     try {
       const device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'CYCPLUS' }], optionalServices: [FTMS_SERVICE] });
-      deviceRef.current = device; const server = await device.gatt?.connect(); const service = await server?.getPrimaryService(FTMS_SERVICE); const characteristic = await service?.getCharacteristic(INDOOR_BIKE_DATA);
-      if (!characteristic) throw new Error('FTMSデータ特性を取得できません');
-      await characteristic.startNotifications();
-      characteristic.addEventListener('characteristicvaluechanged', (event) => {
-        const data = (event.target as BluetoothRemoteGATTCharacteristic).value; if (!data) return;
-        const flags = data.getUint16(0, true); let offset = 2;
-        let speedValue: number | undefined; let cadenceValue: number | undefined; let powerValue: number | undefined;
-        if ((flags & 1) === 0) { speedValue = data.getUint16(offset, true) / 100; setSpeed(speedValue); offset += 2; } if (flags & 2) offset += 2;
-        if (flags & 4) { cadenceValue = data.getUint16(offset, true) / 2; setCadence(cadenceValue); offset += 2; } if (flags & 8) offset += 2; if (flags & 16) offset += 3; if (flags & 32) offset += 2; if (flags & 64) { powerValue = data.getInt16(offset, true); setPower(powerValue); offset += 2; }
-        if (flags & 128) offset += 2;
-        if (speedValue !== undefined || cadenceValue !== undefined || powerValue !== undefined) {
-          const dropState = dropStateRef.current;
-          if (speedValue !== undefined) dropState.speed = speedValue;
-          const now = performance.now();
-          const elapsedSeconds = dropState.lastFtmsTime === null ? 0 : Math.min((now - dropState.lastFtmsTime) / 1000, 2);
-          dropState.lastFtmsTime = now;
-          if (speedValue !== undefined && speedValue > 0 && elapsedSeconds > 0) {
-            dropState.energyKcal += speedValue * elapsedSeconds / 360;
-            const newDropUnits = Math.floor(dropState.energyKcal * 10);
-            if (newDropUnits > 0) { dropState.target += newDropUnits; dropState.energyKcal -= newDropUnits / 10; }
-          }
-        }
-        if (flags & 256 && offset + 2 <= data.byteLength) { const calories = data.getUint16(offset, true); if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories; else if (calories >= sessionCaloriesRef.current) { const delta = calories - sessionCaloriesRef.current; if (delta) { const next = (logsRef.current[selectedDate] || 0) + delta; setLogs((current) => ({ ...current, [selectedDate]: next })); saveLog(selectedDate, next); } sessionCaloriesRef.current = calories; } }
-      });
-      device.addEventListener('gattserverdisconnected', () => { setConnected(false); dropStateRef.current.speed = 0; }); setConnected(true); sessionCaloriesRef.current = null;
-      dropStateRef.current.energyKcal = 0; dropStateRef.current.lastFtmsTime = null; dropStateRef.current.speed = 0;
+      await attachDevice(device);
     } catch (error) { setAuthMessage(error instanceof Error ? error.message : '接続に失敗しました'); }
   };
+
+  useEffect(() => {
+    const bluetooth = navigator.bluetooth;
+    if (!bluetooth?.getDevices) return;
+    bluetooth.getDevices().then((devices) => {
+      const dc1 = devices.find((candidate) => candidate.name?.startsWith('CYCPLUS'));
+      if (dc1) attachDevice(dc1).catch(() => {});
+    }).catch(() => {});
+    return () => { if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current); };
+  }, []);
   const totalCalories = Object.values(logs).reduce((sum, value) => sum + value, 0);
   const selectedCalories = logs[selectedDate] || 0;
   const visibleFat = view === 'today' ? selectedCalories * .125 : totalCalories * .125;
@@ -220,5 +264,5 @@ export default function Home() {
   const signInWithGoogle = async () => { if (!supabaseRef.current) return setAuthMessage('NEXT_PUBLIC_SUPABASE_* を設定してください'); const { error } = await supabaseRef.current.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } }); if (error) setAuthMessage(`Googleログイン失敗: ${error.message}`); };
   const addManualLog = async () => { const amount = Number((document.getElementById('calorieInput') as HTMLInputElement).value); if (!amount || amount < 1) return; const next = selectedCalories + amount; setLogs((current) => ({ ...current, [selectedDate]: next })); await saveLog(selectedDate, next); };
 
-  return <div className="app-shell"><aside><div className="brand"><div className="brand-mark" /><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div><nav><button className="active">⌂<span>ダッシュボード</span></button><button>⌁<span>アクティビティ</span></button><button>◷<span>履歴</span></button></nav></aside><main><header className="topbar"><div><div className="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p className="subtitle">DC1のペダリングから、消費と積み重ねを可視化。</p></div><div className="actions"><div className={connected ? 'date connected' : 'date'}>{connected ? '● CYCPLUS DC1 CONNECTED' : '○ DC1 NOT CONNECTED'}</div><button className="connect-btn" onClick={connect}>{connected ? '接続済み' : 'DC1に接続'}</button>{!user ? <div className="auth-panel"><input placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} /><button onClick={() => submitAuth('signIn')}>ログイン</button><button onClick={() => submitAuth('signUp')}>登録</button><button onClick={signInWithGoogle}>Google</button></div> : <div className="auth-panel"><button onClick={() => supabaseRef.current?.auth.signOut()}>ログアウト</button></div>}<p className="auth-status">{authMessage}</p></div></header><section className="grid"><article className="card visual-card"><div className="visual-head"><div className="eyebrow">LIVE 3D VISUALIZATION</div><h2>{view === 'today' ? '今日の脂肪' : '累積した脂肪'}</h2><p>{view === 'today' ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量'}</p></div><div className="view-switch"><button className={view === 'today' ? 'active' : ''} onClick={() => setView('today')}>今日</button><button className={view === 'total' ? 'active' : ''} onClick={() => setView('total')}>累積</button></div><div className="scene" ref={sceneHostRef}><canvas ref={canvasRef} aria-label="脂肪の3Dモデル" /><div className="scale-reference">500 mL<br />約21 cm</div><div className="zoom-controls" aria-label="3D表示の拡大縮小" ref={zoomControlsRef}><button type="button" aria-label="縮小" onClick={() => setZoom((current) => Math.max(.5, current / 1.25))}>-</button><span className="zoom-level">{zoom.toFixed(1)}x</span><button type="button" aria-label="倍率をリセット" onClick={() => setZoom(1)}>1:1</button><button type="button" aria-label="拡大" onClick={() => setZoom((current) => Math.min(3, current * 1.25))}>+</button></div></div><div className="scene-caption">3D / DRAG TO ROTATE <span>{visibleFat.toFixed(1)} g 脂肪</span></div></article><div className="side"><article className="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div className="metric-number"><strong>{selectedCalories}</strong><span>kcal</span></div><p className="helper">脂肪換算 <strong>{(selectedCalories * .125).toFixed(1)}</strong> g</p><div className="meter"><div style={{ width: `${Math.min(100, selectedCalories / 170 * 100)}%` }} /></div><div className="metric-foot"><span>目標 170 kcal</span><span>{Math.min(100, Math.round(selectedCalories / 170 * 100))}%</span></div><div className="speed-dashboard"><div><small>LIVE SPEED</small><strong>{speed === null ? '--' : speed.toFixed(1)} <span>km/h</span></strong></div><div className="live-stats"><span>{cadence === null ? '--' : cadence.toFixed(1)} rpm</span><span>{power === null ? '--' : power} W</span></div></div></article><article className="card metric-card"><h3>累積した脂肪</h3><div className="metric-number"><strong>{(totalCalories * .125).toFixed(1)}</strong><span>g</span></div><p className="helper">ログインするとユーザー別に保存されます。</p></article><article className="card calendar"><div className="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div className="weekdays">月 火 水 木 金 土 日</div><div className="days">{calendarDays.map((date) => <button key={date} className={`${date === selectedDate ? 'selected ' : ''}${logs[date] ? 'has-log' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><p className="calendar-note">{Number(selectedDate.slice(5, 7))}月{Number(selectedDate.slice(-2))}日を表示中</p></article><article className="card entry-card"><h3>運動ログを追加</h3><div className="input-row"><label className="input-wrap"><input id="calorieInput" type="number" min="1" defaultValue="106" /><span>kcal</span></label><button className="log-btn" onClick={addManualLog}>記録する</button></div></article></div></section></main></div>;
+  return <div className="app-shell"><aside><div className="brand"><div className="brand-mark" /><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div><nav><button className="active">⌂<span>ダッシュボード</span></button><button>⌁<span>アクティビティ</span></button><button>◷<span>履歴</span></button></nav></aside><main><header className="topbar"><div><div className="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p className="subtitle">DC1のペダリングから、消費と積み重ねを可視化。</p></div><div className="actions"><div className={connected ? 'date connected' : 'date'}>{connected ? '● CYCPLUS DC1 CONNECTED' : reconnecting ? '○ DC1 再接続中...' : '○ DC1 NOT CONNECTED'}</div><button className="connect-btn" onClick={connect}>{connected ? '接続済み' : 'DC1に接続'}</button>{!user ? <div className="auth-panel"><input placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} /><button onClick={() => submitAuth('signIn')}>ログイン</button><button onClick={() => submitAuth('signUp')}>登録</button><button onClick={signInWithGoogle}>Google</button></div> : <div className="auth-panel"><button onClick={() => supabaseRef.current?.auth.signOut()}>ログアウト</button></div>}<p className="auth-status">{authMessage}</p></div></header><section className="grid"><article className="card visual-card"><div className="visual-head"><div className="eyebrow">LIVE 3D VISUALIZATION</div><h2>{view === 'today' ? '今日の脂肪' : '累積した脂肪'}</h2><p>{view === 'today' ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量'}</p></div><div className="view-switch"><button className={view === 'today' ? 'active' : ''} onClick={() => setView('today')}>今日</button><button className={view === 'total' ? 'active' : ''} onClick={() => setView('total')}>累積</button></div><div className="scene" ref={sceneHostRef}><canvas ref={canvasRef} aria-label="脂肪の3Dモデル" /><div className="scale-reference">500 mL<br />約21 cm</div><div className="zoom-controls" aria-label="3D表示の拡大縮小" ref={zoomControlsRef}><button type="button" aria-label="縮小" onClick={() => setZoom((current) => Math.max(.5, current / 1.25))}>-</button><span className="zoom-level">{zoom.toFixed(1)}x</span><button type="button" aria-label="倍率をリセット" onClick={() => setZoom(1)}>1:1</button><button type="button" aria-label="拡大" onClick={() => setZoom((current) => Math.min(3, current * 1.25))}>+</button></div></div><div className="scene-caption">3D / DRAG TO ROTATE <span>{visibleFat.toFixed(1)} g 脂肪</span></div></article><div className="side"><article className="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div className="metric-number"><strong>{selectedCalories}</strong><span>kcal</span></div><p className="helper">脂肪換算 <strong>{(selectedCalories * .125).toFixed(1)}</strong> g</p><div className="meter"><div style={{ width: `${Math.min(100, selectedCalories / 170 * 100)}%` }} /></div><div className="metric-foot"><span>目標 170 kcal</span><span>{Math.min(100, Math.round(selectedCalories / 170 * 100))}%</span></div><div className="speed-dashboard"><div><small>LIVE SPEED</small><strong>{speed === null ? '--' : speed.toFixed(1)} <span>km/h</span></strong></div><div className="live-stats"><span>{cadence === null ? '--' : cadence.toFixed(1)} rpm</span><span>{power === null ? '--' : power} W</span></div></div></article><article className="card metric-card"><h3>累積した脂肪</h3><div className="metric-number"><strong>{(totalCalories * .125).toFixed(1)}</strong><span>g</span></div><p className="helper">ログインするとユーザー別に保存されます。</p></article><article className="card calendar"><div className="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div className="weekdays">月 火 水 木 金 土 日</div><div className="days">{calendarDays.map((date) => <button key={date} className={`${date === selectedDate ? 'selected ' : ''}${logs[date] ? 'has-log' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><p className="calendar-note">{Number(selectedDate.slice(5, 7))}月{Number(selectedDate.slice(-2))}日を表示中</p></article><article className="card entry-card"><h3>運動ログを追加</h3><div className="input-row"><label className="input-wrap"><input id="calorieInput" type="number" min="1" defaultValue="106" /><span>kcal</span></label><button className="log-btn" onClick={addManualLog}>記録する</button></div></article></div></section></main></div>;
 }
