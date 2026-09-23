@@ -44,6 +44,7 @@ export default function Home() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionCaloriesRef = useRef<number | null>(null);
   const sessionDistanceRef = useRef<number | null>(null);
+  const energyCalibrationRef = useRef({ kcalPerWattSecond: 1 / 4184, powerSeconds: 0 });
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const logsRef = useRef(logs);
   logsRef.current = logs;
@@ -216,7 +217,9 @@ export default function Home() {
           if (newDropUnits > 0) { dropState.target += newDropUnits; dropState.energyKcal -= newDropUnits / 10; }
         }
         if (powerValue !== undefined && powerValue > 0 && elapsedSeconds > 0) {
-          setLiveCalorieOffset((current) => current + (powerValue as number) * elapsedSeconds / 4184);
+          const powerSeconds = powerValue * elapsedSeconds;
+          energyCalibrationRef.current.powerSeconds += powerSeconds;
+          setLiveCalorieOffset((current) => current + powerSeconds * energyCalibrationRef.current.kcalPerWattSecond);
         }
       }
       if (distanceValue !== undefined) {
@@ -231,7 +234,26 @@ export default function Home() {
           sessionDistanceRef.current = distanceValue;
         } else { sessionDistanceRef.current = distanceValue; }
       }
-      if (flags & 256 && offset + 2 <= data.byteLength) { const calories = data.getUint16(offset, true); if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories; else if (calories >= sessionCaloriesRef.current) { const delta = calories - sessionCaloriesRef.current; if (delta) { const next = (logsRef.current[selectedDate] || 0) + delta; setLogs((current) => ({ ...current, [selectedDate]: next })); saveLog(selectedDate, next, distancesRef.current[selectedDate] || 0); setLiveCalorieOffset(0); } sessionCaloriesRef.current = calories; } }
+      if (flags & 256 && offset + 2 <= data.byteLength) {
+        const calories = data.getUint16(offset, true);
+        if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories;
+        else if (calories >= sessionCaloriesRef.current) {
+          const delta = calories - sessionCaloriesRef.current;
+          if (delta) {
+            const next = (logsRef.current[selectedDate] || 0) + delta;
+            setLogs((current) => ({ ...current, [selectedDate]: next }));
+            saveLog(selectedDate, next, distancesRef.current[selectedDate] || 0);
+            const cal = energyCalibrationRef.current;
+            if (cal.powerSeconds > 0) {
+              const observedRate = delta / cal.powerSeconds;
+              if (observedRate > 0 && observedRate < 1) cal.kcalPerWattSecond = cal.kcalPerWattSecond * .5 + observedRate * .5;
+            }
+            cal.powerSeconds = 0;
+            setLiveCalorieOffset(0);
+          }
+          sessionCaloriesRef.current = calories;
+        }
+      }
     });
     device.addEventListener('gattserverdisconnected', () => {
       setConnected(false);
@@ -244,6 +266,7 @@ export default function Home() {
     setConnected(true);
     sessionCaloriesRef.current = null;
     sessionDistanceRef.current = null;
+    energyCalibrationRef.current = { kcalPerWattSecond: 1 / 4184, powerSeconds: 0 };
     setLiveCalorieOffset(0);
     dropStateRef.current.energyKcal = 0; dropStateRef.current.lastFtmsTime = null; dropStateRef.current.speed = 0;
   };
