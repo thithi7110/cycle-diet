@@ -151,7 +151,7 @@ export default function Home() {
         const asset = await loadFatAsset(desiredReference === 100 ? 'adipose-100g.glb' : 'adipose-10g.glb');
         if (asset) { fatGroup.clear(); fatGroup.add(asset); }
       }
-      const modelScale = Math.max(.075, .105 * Math.cbrt(Math.max(grams, .1) / desiredReference));
+      const modelScale = .105 * Math.cbrt(grams / desiredReference);
       fatGroup.scale.set(modelScale, modelScale, modelScale);
     };
     const resize = () => { const box = host.getBoundingClientRect(); renderer.setSize(box.width, box.height, false); camera.aspect = box.width / box.height; camera.updateProjectionMatrix(); };
