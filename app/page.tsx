@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Script from 'next/script';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
@@ -31,6 +32,11 @@ export default function Home() {
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [hamsterMaxSpeed, setHamsterMaxSpeed] = useState(18);
+  const [hamsterPos, setHamsterPos] = useState({ right: 24, bottom: 25 });
+  const hamsterPosRef = useRef(hamsterPos);
+  hamsterPosRef.current = hamsterPos;
+  const hamsterRef = useRef<HTMLDivElement>(null);
   const deviceRef = useRef<BluetoothDevice | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,9 +85,7 @@ export default function Home() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     const fatGroup = new THREE.Group();
-    const referenceGroup = new THREE.Group();
-    referenceGroup.position.set(.88, -.08, .15);
-    scene.add(fatGroup, referenceGroup);
+    scene.add(fatGroup);
     const fatDropGroup = new THREE.Group();
     scene.add(fatDropGroup);
     const fatDropGeometry = new THREE.SphereGeometry(.16, 16, 10);
@@ -127,11 +131,6 @@ export default function Home() {
     const fallback = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 40), new THREE.MeshPhysicalMaterial({ color: 0xe8d2a0, roughness: .82 }));
     fallback.scale.set(1.48, .68, .95); fatGroup.add(fallback);
     const loader = new GLTFLoader();
-    const loadModel = (path: string, target: THREE.Group, heightAxis: 'x' | 'y' = 'x', heightTarget = 2.96) => loader.load(`/${path}`, (gltf) => {
-      const model = gltf.scene; const box = new THREE.Box3().setFromObject(model); const size = box.getSize(new THREE.Vector3()); const center = box.getCenter(new THREE.Vector3());
-      model.position.sub(center); model.scale.setScalar(heightTarget / Math.max(heightAxis === 'x' ? size.x : size.y, .001)); model.traverse((part) => { if ((part as THREE.Mesh).isMesh) { part.castShadow = true; part.receiveShadow = true; } }); target.clear(); target.add(model);
-    });
-    loadModel('pet-bottle-500ml.glb', referenceGroup, 'y', 1.52);
     const fatAssetCache = new Map<string, THREE.Group>();
     const loadFatAsset = (path: string): Promise<THREE.Group | null> => new Promise((resolve) => {
       const cached = fatAssetCache.get(path);
@@ -259,10 +258,54 @@ export default function Home() {
   const visibleFat = view === 'today' ? selectedCalories * .125 : totalCalories * .125;
   useEffect(() => { updateFatVisualRef.current(visibleFat); }, [visibleFat]);
   useEffect(() => { if (cameraRef.current) cameraRef.current.position.z = 6.4 / zoom; }, [zoom]);
+  useEffect(() => {
+    const stored = Number(localStorage.getItem('hamsterMaxSpeed'));
+    if (stored > 0) setHamsterMaxSpeed(stored);
+    try {
+      const storedPos = JSON.parse(localStorage.getItem('hamsterPos') || 'null');
+      if (storedPos && typeof storedPos.right === 'number' && typeof storedPos.bottom === 'number') setHamsterPos(storedPos);
+    } catch { /* ignore malformed stored value */ }
+  }, []);
+  useEffect(() => { localStorage.setItem('hamsterMaxSpeed', String(hamsterMaxSpeed)); }, [hamsterMaxSpeed]);
+  useEffect(() => { localStorage.setItem('hamsterPos', JSON.stringify(hamsterPos)); }, [hamsterPos]);
+
+  useEffect(() => {
+    const node = hamsterRef.current;
+    if (!node) return;
+    let dragging = false;
+    let start = { x: 0, y: 0 };
+    let startPos = hamsterPosRef.current;
+    const down = (event: PointerEvent) => {
+      event.stopPropagation();
+      dragging = true;
+      start = { x: event.clientX, y: event.clientY };
+      startPos = hamsterPosRef.current;
+      node.setPointerCapture(event.pointerId);
+    };
+    const move = (event: PointerEvent) => {
+      if (!dragging) return;
+      event.stopPropagation();
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      setHamsterPos({ right: startPos.right - dx, bottom: startPos.bottom - dy });
+    };
+    const up = (event: PointerEvent) => {
+      dragging = false;
+      if (node.hasPointerCapture(event.pointerId)) node.releasePointerCapture(event.pointerId);
+    };
+    node.addEventListener('pointerdown', down);
+    node.addEventListener('pointermove', move);
+    node.addEventListener('pointerup', up);
+    return () => {
+      node.removeEventListener('pointerdown', down);
+      node.removeEventListener('pointermove', move);
+      node.removeEventListener('pointerup', up);
+    };
+  }, []);
   const calendarDays = Array.from({ length: 30 }, (_, index) => `2026-09-${String(index + 1).padStart(2, '0')}`);
   const submitAuth = async (mode: 'signIn' | 'signUp') => { if (!supabaseRef.current) return setAuthMessage('NEXT_PUBLIC_SUPABASE_* を設定してください'); const result = mode === 'signIn' ? await supabaseRef.current.auth.signInWithPassword({ email, password }) : await supabaseRef.current.auth.signUp({ email, password }); setAuthMessage(result.error?.message || (mode === 'signUp' ? '確認メールを送信しました' : 'ログインしました')); };
   const signInWithGoogle = async () => { if (!supabaseRef.current) return setAuthMessage('NEXT_PUBLIC_SUPABASE_* を設定してください'); const { error } = await supabaseRef.current.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } }); if (error) setAuthMessage(`Googleログイン失敗: ${error.message}`); };
   const addManualLog = async () => { const amount = Number((document.getElementById('calorieInput') as HTMLInputElement).value); if (!amount || amount < 1) return; const next = selectedCalories + amount; setLogs((current) => ({ ...current, [selectedDate]: next })); await saveLog(selectedDate, next); };
 
-  return <div className="app-shell"><aside><div className="brand"><div className="brand-mark" /><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div><nav><button className="active">⌂<span>ダッシュボード</span></button><button>⌁<span>アクティビティ</span></button><button>◷<span>履歴</span></button></nav></aside><main><header className="topbar"><div><div className="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p className="subtitle">DC1のペダリングから、消費と積み重ねを可視化。</p></div><div className="actions"><div className={connected ? 'date connected' : 'date'}>{connected ? '● CYCPLUS DC1 CONNECTED' : reconnecting ? '○ DC1 再接続中...' : '○ DC1 NOT CONNECTED'}</div><button className="connect-btn" onClick={connect}>{connected ? '接続済み' : 'DC1に接続'}</button>{!user ? <div className="auth-panel"><input placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} /><button onClick={() => submitAuth('signIn')}>ログイン</button><button onClick={() => submitAuth('signUp')}>登録</button><button onClick={signInWithGoogle}>Google</button></div> : <div className="auth-panel"><button onClick={() => supabaseRef.current?.auth.signOut()}>ログアウト</button></div>}<p className="auth-status">{authMessage}</p></div></header><section className="grid"><article className="card visual-card"><div className="visual-head"><div className="eyebrow">LIVE 3D VISUALIZATION</div><h2>{view === 'today' ? '今日の脂肪' : '累積した脂肪'}</h2><p>{view === 'today' ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量'}</p></div><div className="view-switch"><button className={view === 'today' ? 'active' : ''} onClick={() => setView('today')}>今日</button><button className={view === 'total' ? 'active' : ''} onClick={() => setView('total')}>累積</button></div><div className="scene" ref={sceneHostRef}><canvas ref={canvasRef} aria-label="脂肪の3Dモデル" /><div className="scale-reference">500 mL<br />約21 cm</div><div className="zoom-controls" aria-label="3D表示の拡大縮小" ref={zoomControlsRef}><button type="button" aria-label="縮小" onClick={() => setZoom((current) => Math.max(.5, current / 1.25))}>-</button><span className="zoom-level">{zoom.toFixed(1)}x</span><button type="button" aria-label="倍率をリセット" onClick={() => setZoom(1)}>1:1</button><button type="button" aria-label="拡大" onClick={() => setZoom((current) => Math.min(3, current * 1.25))}>+</button></div></div><div className="scene-caption">3D / DRAG TO ROTATE <span>{visibleFat.toFixed(1)} g 脂肪</span></div></article><div className="side"><article className="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div className="metric-number"><strong>{selectedCalories}</strong><span>kcal</span></div><p className="helper">脂肪換算 <strong>{(selectedCalories * .125).toFixed(1)}</strong> g</p><div className="meter"><div style={{ width: `${Math.min(100, selectedCalories / 170 * 100)}%` }} /></div><div className="metric-foot"><span>目標 170 kcal</span><span>{Math.min(100, Math.round(selectedCalories / 170 * 100))}%</span></div><div className="speed-dashboard"><div><small>LIVE SPEED</small><strong>{speed === null ? '--' : speed.toFixed(1)} <span>km/h</span></strong></div><div className="live-stats"><span>{cadence === null ? '--' : cadence.toFixed(1)} rpm</span><span>{power === null ? '--' : power} W</span></div></div></article><article className="card metric-card"><h3>累積した脂肪</h3><div className="metric-number"><strong>{(totalCalories * .125).toFixed(1)}</strong><span>g</span></div><p className="helper">ログインするとユーザー別に保存されます。</p></article><article className="card calendar"><div className="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div className="weekdays">月 火 水 木 金 土 日</div><div className="days">{calendarDays.map((date) => <button key={date} className={`${date === selectedDate ? 'selected ' : ''}${logs[date] ? 'has-log' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><p className="calendar-note">{Number(selectedDate.slice(5, 7))}月{Number(selectedDate.slice(-2))}日を表示中</p></article><article className="card entry-card"><h3>運動ログを追加</h3><div className="input-row"><label className="input-wrap"><input id="calorieInput" type="number" min="1" defaultValue="106" /><span>kcal</span></label><button className="log-btn" onClick={addManualLog}>記録する</button></div></article></div></section></main></div>;
+  return <><Script src="/running-hamster.js" strategy="afterInteractive" /><div className="app-shell"><aside><div className="brand"><div className="brand-mark" /><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div><nav><button className="active">⌂<span>ダッシュボード</span></button><button>⌁<span>アクティビティ</span></button><button>◷<span>履歴</span></button></nav></aside><main><header className="topbar"><div><div className="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p className="subtitle">DC1のペダリングから、消費と積み重ねを可視化。</p></div><div className="actions"><div className={connected ? 'date connected' : 'date'}>{connected ? '● CYCPLUS DC1 CONNECTED' : reconnecting ? '○ DC1 再接続中...' : '○ DC1 NOT CONNECTED'}</div><button className="connect-btn" onClick={connect}>{connected ? '接続済み' : 'DC1に接続'}</button>{!user ? <div className="auth-panel"><input placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} /><button onClick={() => submitAuth('signIn')}>ログイン</button><button onClick={() => submitAuth('signUp')}>登録</button><button onClick={signInWithGoogle}>Google</button></div> : <div className="auth-panel"><button onClick={() => supabaseRef.current?.auth.signOut()}>ログアウト</button></div>}<p className="auth-status">{authMessage}</p></div></header><section className="grid"><article className="card visual-card"><div className="visual-head"><div className="eyebrow">LIVE 3D VISUALIZATION</div><h2>{view === 'today' ? '今日の脂肪' : '累積した脂肪'}</h2><p>{view === 'today' ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量'}</p></div><div className="view-switch"><button className={view === 'today' ? 'active' : ''} onClick={() => setView('today')}>今日</button><button className={view === 'total' ? 'active' : ''} onClick={() => setView('total')}>累積</button></div><div className="scene" ref={sceneHostRef}><canvas ref={canvasRef} aria-label="脂肪の3Dモデル" /><div className="hamster-reference" ref={hamsterRef} style={{ right: hamsterPos.right, bottom: hamsterPos.bottom }}><running-hamster speed={speed ?? 0} max-speed={hamsterMaxSpeed} shadow="false" style={{ width: '8cm', transform: `scale(${zoom})`, transformOrigin: 'bottom right' }} /></div><div className="zoom-controls" aria-label="3D表示の拡大縮小" ref={zoomControlsRef}><button type="button" aria-label="縮小" onClick={() => setZoom((current) => Math.max(.5, current / 1.25))}>-</button><span className="zoom-level">{zoom.toFixed(1)}x</span><button type="button" aria-label="倍率をリセット" onClick={() => setZoom(1)}>1:1</button><button type="button" aria-label="拡大" onClick={() => setZoom((current) => Math.min(3, current * 1.25))}>+</button></div></div><div className="scene-caption">3D / DRAG TO ROTATE <span>{visibleFat.toFixed(1)} g 脂肪</span></div></article><div className="side"><article className="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div className="metric-number"><strong>{selectedCalories}</strong><span>kcal</span></div><p className="helper">脂肪換算 <strong>{(selectedCalories * .125).toFixed(1)}</strong> g</p><div className="meter"><div style={{ width: `${Math.min(100, selectedCalories / 170 * 100)}%` }} /></div><div className="metric-foot"><span>目標 170 kcal</span><span>{Math.min(100, Math.round(selectedCalories / 170 * 100))}%</span></div><div className="speed-dashboard"><div><small>LIVE SPEED</small><strong>{speed === null ? '--' : speed.toFixed(1)} <span>km/h</span></strong></div><div className="live-stats"><span>{cadence === null ? '--' : cadence.toFixed(1)} rpm</span><span>{power === null ? '--' : power} W</span></div></div><div className="hamster-setting"><label>ハムスター基準速度<input type="number" min="5" max="30" step="1" value={hamsterMaxSpeed} onChange={(e) => setHamsterMaxSpeed(Math.min(30, Math.max(5, Number(e.target.value) || 18)))} /><span>km/h</span></label><p className="helper">低いほど、同じ速度でも速く走って見えます</p></div></article><article className="card metric-card"><h3>累積した脂肪</h3><div className="metric-number"><strong>{(totalCalories * .125).toFixed(1)}</strong><span>g</span></div><p className="helper">ログインするとユーザー別に保存されます。</p></article><article className="card calendar"><div className="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div className="weekdays">月 火 水 木 金 土 日</div><div className="days">{calendarDays.map((date) => <button key={date} className={`${date === selectedDate ? 'selected ' : ''}${logs[date] ? 'has-log' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><p className="calendar-note">{Number(selectedDate.slice(5, 7))}月{Number(selectedDate.slice(-2))}日を表示中</p></article><article className="card entry-card"><h3>運動ログを追加</h3><div className="input-row"><label className="input-wrap"><input id="calorieInput" type="number" min="1" defaultValue="106" /><span>kcal</span></label><button className="log-btn" onClick={addManualLog}>記録する</button></div></article></div></section></main></div></>;
 }
