@@ -20,6 +20,8 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneHostRef = useRef<HTMLDivElement>(null);
   const [logs, setLogs] = useState<Record<string, number>>({});
+  const [distances, setDistances] = useState<Record<string, number>>({});
+  const [liveCalorieOffset, setLiveCalorieOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState(today);
   const [view, setView] = useState<'today' | 'total'>('today');
   const [user, setUser] = useState<User | null>(null);
@@ -41,17 +43,20 @@ export default function Home() {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionCaloriesRef = useRef<number | null>(null);
+  const sessionDistanceRef = useRef<number | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const logsRef = useRef(logs);
   logsRef.current = logs;
+  const distancesRef = useRef(distances);
+  distancesRef.current = distances;
   const dropStateRef = useRef({ target: 0, count: 0, timer: 0, energyKcal: 0, lastFtmsTime: null as number | null, speed: 0 });
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const zoomControlsRef = useRef<HTMLDivElement>(null);
   const updateFatVisualRef = useRef<(grams: number) => void>(() => {});
 
-  const saveLog = async (date: string, calories: number) => {
+  const saveLog = async (date: string, calories: number, distanceMeters: number) => {
     if (!supabaseRef.current || !user) return;
-    await supabaseRef.current.from('daily_logs').upsert({ user_id: user.id, log_date: date, calories }, { onConflict: 'user_id,log_date' });
+    await supabaseRef.current.from('daily_logs').upsert({ user_id: user.id, log_date: date, calories, distance_meters: distanceMeters }, { onConflict: 'user_id,log_date' });
   };
 
   useEffect(() => {
@@ -62,8 +67,11 @@ export default function Home() {
       setUser(data.session?.user ?? null);
       setAuthMessage(data.session?.user ? `${data.session.user.email} で保存中` : 'ログインすると個人保存');
       if (data.session?.user) {
-        const { data: rows } = await supabase.from('daily_logs').select('log_date,calories').eq('user_id', data.session.user.id);
-        if (rows) setLogs(Object.fromEntries(rows.map((row) => [row.log_date, Number(row.calories)])));
+        const { data: rows } = await supabase.from('daily_logs').select('log_date,calories,distance_meters').eq('user_id', data.session.user.id);
+        if (rows) {
+          setLogs(Object.fromEntries(rows.map((row) => [row.log_date, Number(row.calories)])));
+          setDistances(Object.fromEntries(rows.map((row) => [row.log_date, Number(row.distance_meters) || 0])));
+        }
       }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -190,9 +198,11 @@ export default function Home() {
     characteristic.addEventListener('characteristicvaluechanged', (event) => {
       const data = (event.target as BluetoothRemoteGATTCharacteristic).value; if (!data) return;
       const flags = data.getUint16(0, true); let offset = 2;
-      let speedValue: number | undefined; let cadenceValue: number | undefined; let powerValue: number | undefined;
+      let speedValue: number | undefined; let cadenceValue: number | undefined; let powerValue: number | undefined; let distanceValue: number | undefined;
       if ((flags & 1) === 0) { speedValue = data.getUint16(offset, true) / 100; setSpeed(speedValue); offset += 2; } if (flags & 2) offset += 2;
-      if (flags & 4) { cadenceValue = data.getUint16(offset, true) / 2; setCadence(cadenceValue); offset += 2; } if (flags & 8) offset += 2; if (flags & 16) offset += 3; if (flags & 32) offset += 2; if (flags & 64) { powerValue = data.getInt16(offset, true); setPower(powerValue); offset += 2; }
+      if (flags & 4) { cadenceValue = data.getUint16(offset, true) / 2; setCadence(cadenceValue); offset += 2; } if (flags & 8) offset += 2;
+      if (flags & 16) { distanceValue = data.getUint8(offset) | (data.getUint8(offset + 1) << 8) | (data.getUint8(offset + 2) << 16); offset += 3; }
+      if (flags & 32) offset += 2; if (flags & 64) { powerValue = data.getInt16(offset, true); setPower(powerValue); offset += 2; }
       if (flags & 128) offset += 2;
       if (speedValue !== undefined || cadenceValue !== undefined || powerValue !== undefined) {
         const dropState = dropStateRef.current;
@@ -205,8 +215,23 @@ export default function Home() {
           const newDropUnits = Math.floor(dropState.energyKcal * 10);
           if (newDropUnits > 0) { dropState.target += newDropUnits; dropState.energyKcal -= newDropUnits / 10; }
         }
+        if (powerValue !== undefined && powerValue > 0 && elapsedSeconds > 0) {
+          setLiveCalorieOffset((current) => current + (powerValue as number) * elapsedSeconds / 4184);
+        }
       }
-      if (flags & 256 && offset + 2 <= data.byteLength) { const calories = data.getUint16(offset, true); if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories; else if (calories >= sessionCaloriesRef.current) { const delta = calories - sessionCaloriesRef.current; if (delta) { const next = (logsRef.current[selectedDate] || 0) + delta; setLogs((current) => ({ ...current, [selectedDate]: next })); saveLog(selectedDate, next); } sessionCaloriesRef.current = calories; } }
+      if (distanceValue !== undefined) {
+        if (sessionDistanceRef.current === null) sessionDistanceRef.current = distanceValue;
+        else if (distanceValue >= sessionDistanceRef.current) {
+          const deltaMeters = distanceValue - sessionDistanceRef.current;
+          if (deltaMeters) {
+            const nextMeters = (distancesRef.current[selectedDate] || 0) + deltaMeters;
+            setDistances((current) => ({ ...current, [selectedDate]: nextMeters }));
+            saveLog(selectedDate, logsRef.current[selectedDate] || 0, nextMeters);
+          }
+          sessionDistanceRef.current = distanceValue;
+        } else { sessionDistanceRef.current = distanceValue; }
+      }
+      if (flags & 256 && offset + 2 <= data.byteLength) { const calories = data.getUint16(offset, true); if (sessionCaloriesRef.current === null) sessionCaloriesRef.current = calories; else if (calories >= sessionCaloriesRef.current) { const delta = calories - sessionCaloriesRef.current; if (delta) { const next = (logsRef.current[selectedDate] || 0) + delta; setLogs((current) => ({ ...current, [selectedDate]: next })); saveLog(selectedDate, next, distancesRef.current[selectedDate] || 0); setLiveCalorieOffset(0); } sessionCaloriesRef.current = calories; } }
     });
     device.addEventListener('gattserverdisconnected', () => {
       setConnected(false);
@@ -218,6 +243,8 @@ export default function Home() {
     setReconnecting(false);
     setConnected(true);
     sessionCaloriesRef.current = null;
+    sessionDistanceRef.current = null;
+    setLiveCalorieOffset(0);
     dropStateRef.current.energyKcal = 0; dropStateRef.current.lastFtmsTime = null; dropStateRef.current.speed = 0;
   };
 
@@ -255,7 +282,10 @@ export default function Home() {
   }, []);
   const totalCalories = Object.values(logs).reduce((sum, value) => sum + value, 0);
   const selectedCalories = logs[selectedDate] || 0;
-  const visibleFat = view === 'today' ? selectedCalories * .125 : totalCalories * .125;
+  const displayCalories = selectedDate === today ? selectedCalories + liveCalorieOffset : selectedCalories;
+  const totalDistance = Object.values(distances).reduce((sum, value) => sum + value, 0);
+  const selectedDistance = distances[selectedDate] || 0;
+  const visibleFat = view === 'today' ? displayCalories * .125 : totalCalories * .125;
   useEffect(() => { updateFatVisualRef.current(visibleFat); }, [visibleFat]);
   useEffect(() => { if (cameraRef.current) cameraRef.current.position.z = 6.4 / zoom; }, [zoom]);
   useEffect(() => {
@@ -305,7 +335,7 @@ export default function Home() {
   const calendarDays = Array.from({ length: 30 }, (_, index) => `2026-09-${String(index + 1).padStart(2, '0')}`);
   const submitAuth = async (mode: 'signIn' | 'signUp') => { if (!supabaseRef.current) return setAuthMessage('NEXT_PUBLIC_SUPABASE_* を設定してください'); const result = mode === 'signIn' ? await supabaseRef.current.auth.signInWithPassword({ email, password }) : await supabaseRef.current.auth.signUp({ email, password }); setAuthMessage(result.error?.message || (mode === 'signUp' ? '確認メールを送信しました' : 'ログインしました')); };
   const signInWithGoogle = async () => { if (!supabaseRef.current) return setAuthMessage('NEXT_PUBLIC_SUPABASE_* を設定してください'); const { error } = await supabaseRef.current.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } }); if (error) setAuthMessage(`Googleログイン失敗: ${error.message}`); };
-  const addManualLog = async () => { const amount = Number((document.getElementById('calorieInput') as HTMLInputElement).value); if (!amount || amount < 1) return; const next = selectedCalories + amount; setLogs((current) => ({ ...current, [selectedDate]: next })); await saveLog(selectedDate, next); };
+  const addManualLog = async () => { const amount = Number((document.getElementById('calorieInput') as HTMLInputElement).value); if (!amount || amount < 1) return; const next = selectedCalories + amount; setLogs((current) => ({ ...current, [selectedDate]: next })); await saveLog(selectedDate, next, distancesRef.current[selectedDate] || 0); };
 
-  return <><Script src="/running-hamster.js" strategy="afterInteractive" /><div className="app-shell"><aside><div className="brand"><div className="brand-mark" /><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div><nav><button className="active">⌂<span>ダッシュボード</span></button><button>⌁<span>アクティビティ</span></button><button>◷<span>履歴</span></button></nav></aside><main><header className="topbar"><div><div className="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p className="subtitle">DC1のペダリングから、消費と積み重ねを可視化。</p></div><div className="actions"><div className={connected ? 'date connected' : 'date'}>{connected ? '● CYCPLUS DC1 CONNECTED' : reconnecting ? '○ DC1 再接続中...' : '○ DC1 NOT CONNECTED'}</div><button className="connect-btn" onClick={connect}>{connected ? '接続済み' : 'DC1に接続'}</button>{!user ? <div className="auth-panel"><input placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} /><button onClick={() => submitAuth('signIn')}>ログイン</button><button onClick={() => submitAuth('signUp')}>登録</button><button onClick={signInWithGoogle}>Google</button></div> : <div className="auth-panel"><button onClick={() => supabaseRef.current?.auth.signOut()}>ログアウト</button></div>}<p className="auth-status">{authMessage}</p></div></header><section className="grid"><article className="card visual-card"><div className="visual-head"><div className="eyebrow">LIVE 3D VISUALIZATION</div><h2>{view === 'today' ? '今日の脂肪' : '累積した脂肪'}</h2><p>{view === 'today' ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量'}</p></div><div className="view-switch"><button className={view === 'today' ? 'active' : ''} onClick={() => setView('today')}>今日</button><button className={view === 'total' ? 'active' : ''} onClick={() => setView('total')}>累積</button></div><div className="scene" ref={sceneHostRef}><canvas ref={canvasRef} aria-label="脂肪の3Dモデル" /><div className="hamster-reference" ref={hamsterRef} style={{ right: hamsterPos.right, bottom: hamsterPos.bottom }}><running-hamster speed={speed ?? 0} max-speed={hamsterMaxSpeed} shadow="false" style={{ width: '8cm', transform: `scale(${zoom})`, transformOrigin: 'bottom right' }} /></div><div className="zoom-controls" aria-label="3D表示の拡大縮小" ref={zoomControlsRef}><button type="button" aria-label="縮小" onClick={() => setZoom((current) => Math.max(.5, current / 1.25))}>-</button><span className="zoom-level">{zoom.toFixed(1)}x</span><button type="button" aria-label="倍率をリセット" onClick={() => setZoom(1)}>1:1</button><button type="button" aria-label="拡大" onClick={() => setZoom((current) => Math.min(3, current * 1.25))}>+</button></div></div><div className="scene-caption">3D / DRAG TO ROTATE <span>{visibleFat.toFixed(1)} g 脂肪</span></div></article><div className="side"><article className="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div className="metric-number"><strong>{selectedCalories}</strong><span>kcal</span></div><p className="helper">脂肪換算 <strong>{(selectedCalories * .125).toFixed(1)}</strong> g</p><div className="meter"><div style={{ width: `${Math.min(100, selectedCalories / 170 * 100)}%` }} /></div><div className="metric-foot"><span>目標 170 kcal</span><span>{Math.min(100, Math.round(selectedCalories / 170 * 100))}%</span></div><div className="speed-dashboard"><div><small>LIVE SPEED</small><strong>{speed === null ? '--' : speed.toFixed(1)} <span>km/h</span></strong></div><div className="live-stats"><span>{cadence === null ? '--' : cadence.toFixed(1)} rpm</span><span>{power === null ? '--' : power} W</span></div></div><div className="hamster-setting"><label>ハムスター基準速度<input type="number" min="5" max="30" step="1" value={hamsterMaxSpeed} onChange={(e) => setHamsterMaxSpeed(Math.min(30, Math.max(5, Number(e.target.value) || 18)))} /><span>km/h</span></label><p className="helper">低いほど、同じ速度でも速く走って見えます</p></div></article><article className="card metric-card"><h3>累積した脂肪</h3><div className="metric-number"><strong>{(totalCalories * .125).toFixed(1)}</strong><span>g</span></div><p className="helper">ログインするとユーザー別に保存されます。</p></article><article className="card calendar"><div className="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div className="weekdays">月 火 水 木 金 土 日</div><div className="days">{calendarDays.map((date) => <button key={date} className={`${date === selectedDate ? 'selected ' : ''}${logs[date] ? 'has-log' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><p className="calendar-note">{Number(selectedDate.slice(5, 7))}月{Number(selectedDate.slice(-2))}日を表示中</p></article><article className="card entry-card"><h3>運動ログを追加</h3><div className="input-row"><label className="input-wrap"><input id="calorieInput" type="number" min="1" defaultValue="106" /><span>kcal</span></label><button className="log-btn" onClick={addManualLog}>記録する</button></div></article></div></section></main></div></>;
+  return <><Script src="/running-hamster.js" strategy="afterInteractive" /><div className="app-shell"><aside><div className="brand"><div className="brand-mark" /><div><strong>FAT / CYCLE</strong><small>DC1 LOG STUDIO</small></div></div><nav><button className="active">⌂<span>ダッシュボード</span></button><button>⌁<span>アクティビティ</span></button><button>◷<span>履歴</span></button></nav></aside><main><header className="topbar"><div><div className="eyebrow">TUESDAY / 22 SEP 2026</div><h1>脂肪の変化を、形にする。</h1><p className="subtitle">DC1のペダリングから、消費と積み重ねを可視化。</p></div><div className="actions"><div className={connected ? 'date connected' : 'date'}>{connected ? '● CYCPLUS DC1 CONNECTED' : reconnecting ? '○ DC1 再接続中...' : '○ DC1 NOT CONNECTED'}</div><button className="connect-btn" onClick={connect}>{connected ? '接続済み' : 'DC1に接続'}</button>{!user ? <div className="auth-panel"><input placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} /><button onClick={() => submitAuth('signIn')}>ログイン</button><button onClick={() => submitAuth('signUp')}>登録</button><button onClick={signInWithGoogle}>Google</button></div> : <div className="auth-panel"><button onClick={() => supabaseRef.current?.auth.signOut()}>ログアウト</button></div>}<p className="auth-status">{authMessage}</p></div></header><section className="grid"><article className="card visual-card"><div className="visual-head"><div className="eyebrow">LIVE 3D VISUALIZATION</div><h2>{view === 'today' ? '今日の脂肪' : '累積した脂肪'}</h2><p>{view === 'today' ? '今日の運動で消費した脂肪量' : 'これまでの運動で消費した脂肪量'}</p></div><div className="view-switch"><button className={view === 'today' ? 'active' : ''} onClick={() => setView('today')}>今日</button><button className={view === 'total' ? 'active' : ''} onClick={() => setView('total')}>累積</button></div><div className="scene" ref={sceneHostRef}><canvas ref={canvasRef} aria-label="脂肪の3Dモデル" /><div className="hamster-reference" ref={hamsterRef} style={{ right: hamsterPos.right, bottom: hamsterPos.bottom }}><running-hamster speed={speed ?? 0} max-speed={hamsterMaxSpeed} shadow="false" style={{ width: '8cm', transform: `scale(${zoom})`, transformOrigin: 'bottom right' }} /></div><div className="zoom-controls" aria-label="3D表示の拡大縮小" ref={zoomControlsRef}><button type="button" aria-label="縮小" onClick={() => setZoom((current) => Math.max(.5, current / 1.25))}>-</button><span className="zoom-level">{zoom.toFixed(1)}x</span><button type="button" aria-label="倍率をリセット" onClick={() => setZoom(1)}>1:1</button><button type="button" aria-label="拡大" onClick={() => setZoom((current) => Math.min(3, current * 1.25))}>+</button></div></div><div className="scene-caption">3D / DRAG TO ROTATE <span>{visibleFat.toFixed(1)} g 脂肪</span></div></article><div className="side"><article className="card metric-card"><h3>本日の消費カロリー → 脂肪</h3><div className="metric-number"><strong>{displayCalories.toFixed(1)}</strong><span>kcal</span></div><p className="helper">脂肪換算 <strong>{(displayCalories * .125).toFixed(1)}</strong> g・走行距離 <strong>{(selectedDistance / 1000).toFixed(2)}</strong> km</p><div className="meter"><div style={{ width: `${Math.min(100, displayCalories / 170 * 100)}%` }} /></div><div className="metric-foot"><span>目標 170 kcal</span><span>{Math.min(100, Math.round(displayCalories / 170 * 100))}%</span></div><div className="speed-dashboard"><div><small>LIVE SPEED</small><strong>{speed === null ? '--' : speed.toFixed(1)} <span>km/h</span></strong></div><div className="live-stats"><span>{cadence === null ? '--' : cadence.toFixed(1)} rpm</span><span>{power === null ? '--' : power} W</span></div></div><div className="hamster-setting"><label>ハムスター基準速度<input type="number" min="5" max="30" step="1" value={hamsterMaxSpeed} onChange={(e) => setHamsterMaxSpeed(Math.min(30, Math.max(5, Number(e.target.value) || 18)))} /><span>km/h</span></label><p className="helper">低いほど、同じ速度でも速く走って見えます</p></div></article><article className="card metric-card"><h3>累積した脂肪</h3><div className="metric-number"><strong>{(totalCalories * .125).toFixed(1)}</strong><span>g</span></div><p className="helper">累積距離 <strong>{(totalDistance / 1000).toFixed(2)}</strong> km・ログインするとユーザー別に保存されます。</p></article><article className="card calendar"><div className="calendar-head"><h3>運動カレンダー</h3><span>2026年 9月</span></div><div className="weekdays">月 火 水 木 金 土 日</div><div className="days">{calendarDays.map((date) => <button key={date} className={`${date === selectedDate ? 'selected ' : ''}${logs[date] ? 'has-log' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><p className="calendar-note">{Number(selectedDate.slice(5, 7))}月{Number(selectedDate.slice(-2))}日を表示中</p></article><article className="card entry-card"><h3>運動ログを追加</h3><div className="input-row"><label className="input-wrap"><input id="calorieInput" type="number" min="1" defaultValue="106" /><span>kcal</span></label><button className="log-btn" onClick={addManualLog}>記録する</button></div></article></div></section></main></div></>;
 }

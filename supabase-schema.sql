@@ -2,9 +2,13 @@ create table if not exists public.daily_logs (
   user_id uuid not null references auth.users(id) on delete cascade,
   log_date date not null,
   calories numeric(10, 2) not null default 0 check (calories >= 0),
+  distance_meters numeric(10, 2) not null default 0 check (distance_meters >= 0),
   updated_at timestamptz not null default now(),
   primary key (user_id, log_date)
 );
+
+-- Existing installs created before distance tracking was added.
+alter table public.daily_logs add column if not exists distance_meters numeric(10, 2) not null default 0 check (distance_meters >= 0);
 
 alter table public.daily_logs enable row level security;
 
